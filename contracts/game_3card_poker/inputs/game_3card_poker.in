@@ -1,0 +1,20 @@
+// The program input for game_3_card_poker/src/main.leo
+[main]
+public a: u32 = 1u32;
+b: u32 = 2u32;
+
+[save_round]
+public game_id: field = 1001field;
+public round_id: u64 = 1u64;
+public owner: address = aleo1l44dfmwcu7j2e26yhrlhrxla4lsrmr0rxymxfzxj6h8m2mnegyqs8x0end;
+public total_amount: u64 = 1000u64;
+public winner: field = 9527field;
+
+[save_user_record]
+public game_id: field = 1001field;
+public round_id: u64 = 1u64;
+public owner: address = aleo1l44dfmwcu7j2e26yhrlhrxla4lsrmr0rxymxfzxj6h8m2mnegyqs8x0end;
+public user: field = 9527field;
+public poker: field = 345field;
+public status: i8 = 1i8;
+public amount: u64 = 1000u64;

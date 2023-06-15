@@ -1,0 +1,25 @@
+
+server:
+  port: 8080
+
+argon2:
+  iterations: 2
+  key_length: 32
+  salt_length: 16
+  memory: 64
+  parallelism: 4
+
+redis:
+  host: localhost
+  port: 6379
+  password:
+  database_index: 0
+
+smtp:
+  host: smtp.qq.com
+  port: 25
+  timeout: 10s
+  username: 1101375579@qq.com
+  password: zvogtpjcpltohbif
+  sender: Game3CardPoker<1101375579@qq.com>
+  subject: Registration verification code

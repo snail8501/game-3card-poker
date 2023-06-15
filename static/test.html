@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <title>WebSocket Example</title>
+    <style>
+        .status-bar {
+            display: flex -webkit-inline-box;
+            align-items: center;
+        }
+        .label {
+            font-weight: bold;
+            margin-right: 5px;
+        }
+        .message {
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+<h1>WebSocket Example</h1>
+<div class="status-bar">
+    <span class="label">广播：</span><br/>
+    <p class="message" id="broadcast"></p>
+</div>
+<div class="status-bar">
+    <span class="label">状态：</span><br/>
+    <p class="message" id="status">等待连接</p>
+</div>
+<div class="status-bar">
+    <span class="label">消息：</span><br/>
+    <p class="message" id="message">NULL</p>
+</div>
+<!--input id="webSocketUrl" type="text" value="162.219.87.221:8080" style="width: 250px;"-->
+<input id="webSocketUrl" type="text" value="localhost:8080" style="width: 250px;">
+<input id="webSocketGameId" type="text" style="width: 300px;" placeholder="输入游戏ID"/>
+<button id="userConnect"/>3-->> Connect</button>
+<button id="userDisConnect">Disconnect</button>
+
+<br/><br/><span class="label">用户登录：</span><br/>
+<input id="loginUser" type="text" value="0402liujun@163.com" style="width: 150px;" placeholder="登录邮箱"/>
+<input id="loginPasswd" type="text" value="1234567" style="width: 100px;" placeholder="登录密码"/>
+<button type="submit" id="loginBtn">1-->> User Login</button>
+
+<br/><br/><span class="label">创建游戏房间：</span><br/>
+<input id="minimum" type="number" value="2" style="width: 70px;" placeholder="最低人数" />
+<button type="submit" id="createBtn">2-->> Create Game</button>
+
+<br/><br/><span class="label">游戏操作：</span><br/>
+准备游戏:->&nbsp;&nbsp; <button id="userReayGame"/>4-->> Reay Game</button><br/>
+开始游戏(庄家操作):->&nbsp;&nbsp; <button id="userStartGame"/>5-->> Start Game</button><br/>
+看牌:->&nbsp;&nbsp; <button id="userLookCard"/>User Look Card</button><br/>
+弃牌:->&nbsp;&nbsp; <button id="userGiveUp"/>User Give Up</button><br/>
+下注跟注:->&nbsp;&nbsp;
+<input id="betChips" type="number" style="width: 100px;" placeholder="下注金额"/>
+<button id="userBetChips"/>User Betting</button><br/>
+PK:->&nbsp;&nbsp;
+<input id="pkBetChips" type="number" style="width: 100px;" placeholder="下注金额"/>
+<input id="pkCompareId" type="number" style="width: 100px;" placeholder="PK用户ID"/>
+<button id="userPkCompare"/>User PK Compare</button><br/>
+<br/>
+自动下注:->&nbsp;&nbsp;
+<button id="openAutoBetting"/>开启自动下注</button>
+<button id="closeAutoBetting"/>取消自动下注</button><br/>
+</body>
+<script>
+
+    // 用户登录
+    document.getElementById('loginBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', 'http://' + document.getElementById('webSocketUrl').value + '/api/user/login', true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                status_update("login success ==>>> " + xhr.responseText);
+            }
+        };
+
+        xhr.send(JSON.stringify({
+            email: document.getElementById('loginUser').value,
+            password: document.getElementById('loginPasswd').value
+        }));
+    });
+
+    // 创建游戏房间
+    document.getElementById('createBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', 'http://' + document.getElementById('webSocketUrl').value + '/api/game/create', true);
+        xhr.setRequestHeader("Content-Type", "application/json");
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4 && xhr.status === 200) {
+                status_update("game id ==>>> " + JSON.parse(xhr.responseText).data);
+            }
+        };
+        xhr.send(JSON.stringify({
+            minimum: parseInt(document.getElementById('minimum').value),
+            lowBetChips: 6,
+            topBetChips: 60,
+            totalRounds: 10,
+        }));
+    });
+
+    // 0、准备游戏
+    document.getElementById('userReayGame').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 0
+        }))
+    });
+
+    // 1、开始游戏->仅庄家操作
+    document.getElementById('userStartGame').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 1
+        }))
+    });
+
+    // 2、查看底牌
+    document.getElementById('userLookCard').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 2,
+            currRound: currRound
+        }))
+    });
+
+    // 3、用户弃牌
+    document.getElementById('userGiveUp').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 3,
+            currRound: currRound
+        }))
+    });
+
+    // 4、跟注/加注
+    document.getElementById('userBetChips').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 4,
+            currRound: currRound,
+            betChips: parseInt(document.getElementById('betChips').value)
+        }))
+    });
+
+    // 5、下注比牌
+    var currRound = 0;
+    document.getElementById('userPkCompare').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 5,
+            currRound: currRound,
+            compareId: parseInt(document.getElementById('pkCompareId').value),
+            betChips: parseInt(document.getElementById('pkBetChips').value)
+        }))
+    });
+
+    // 6、开启->自动下注
+    document.getElementById('openAutoBetting').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 6,
+            currRound: currRound,
+            isAutoBet: true
+        }))
+    });
+
+    // 6、关闭->自动下注
+    document.getElementById('closeAutoBetting').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        socket.send(JSON.stringify({
+            type: 6,
+            currRound: currRound,
+            isAutoBet: false
+        }))
+    });
+
+
+    //请求连接
+    var socket;
+    document.getElementById('userConnect').addEventListener('click', (e) => {
+        e.preventDefault();
+
+        if (socket != null) return;
+
+        socket = new WebSocket("ws://" + document.getElementById('webSocketUrl').value + "/ws?gameId=" + document.getElementById('webSocketGameId').value);
+
+        //监听服务器关闭服务事件
+        socket.addEventListener('open', (event) => {
+            console.log(event);
+            status_update("websocket[open]->连接服务器成功");
+        });
+
+        //监听服务器关闭服务事件
+        socket.addEventListener('close', (event) => {
+            console.log(event);
+            status_update("websocket[close]->从服务器中断开");
+            disconnect();
+            message("close")
+            broadcast()
+        });
+
+        //监听服务器关闭服务事件
+        socket.addEventListener('error', (event) => {
+            console.log(event);
+            status_update("websocket[error]->连接异常中断开");
+            disconnect();
+            message("error")
+            broadcast()
+        });
+
+        //监听服务器端发送消息事件
+        socket.addEventListener('message', (event) => {
+            var data = JSON.parse(event.data)
+            if (data != null && data.msgType == 0) {
+                currRound = data.room.currRound
+                broadcast(JSON.stringify(event.data))
+            }else{
+                message(JSON.stringify(event.data))
+            }
+        });
+    });
+
+    //断开连接
+    document.getElementById('userDisConnect').addEventListener('click', (e) => {
+        e.preventDefault();
+        disconnect();
+    });
+
+    // 关闭连接
+    function disconnect(){
+        try {
+            socket.close();
+            broadcast()
+        } catch (e) {
+            if (socket != null) {
+                console.log("disconnect-->> ", e);
+            }
+        }
+        socket = null;
+    }
+
+    //显示服务器发来的消息
+    function message(data) {
+        document.getElementById('message').innerHTML = "Server says: " + data;
+    }
+
+    //广播消息
+    function broadcast(data) {
+        document.getElementById('broadcast').innerHTML = "Broadcast Msg: " + data;
+    }
+
+    //显示当前状态
+    function status_update(txt) {
+        document.getElementById('status').innerHTML = txt;
+    }
+</script>
+</html>
