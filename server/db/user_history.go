@@ -10,7 +10,7 @@ type UserHistory struct {
 	UserId        int64     `json:"userId"`
 	GameId        string    `json:"gameId"`
 	RoundID       int       `json:"roundID"`
-	Status        int       `json:"status"`
+	State         int       `json:"state"`
 	Amount        int64     `json:"amount"`
 	BalanceBefore int64     `json:"balanceBefore"`
 	CreateAt      time.Time `json:"createTime" gorm:"autoCreateTime:milli; not null; default:(datetime('now', 'localtime'))"`

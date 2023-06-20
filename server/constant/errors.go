@@ -27,11 +27,17 @@ var (
 
 	GamePkUserInvalidError = errors.New("游戏选择PK用户无效")
 
+	GamePkUserMySelfError = errors.New("游戏选择PK用户不能是自己")
+
+	GameRaisBetNotEnoughError = errors.New("下注筹码不能低于前者")
+
 	NotCurrentOperateError = errors.New("非当前操作用户,请等待")
 
 	UserNotExistError = errors.New("用户不能存在")
 
 	UserNotEnoughBetError = errors.New("用户筹码不足")
+
+	UserSetAutoBettingError = errors.New("用户设置自动下注操作")
 
 	DelayOperateExpiredError = errors.New("延续消息处理过期")
 )

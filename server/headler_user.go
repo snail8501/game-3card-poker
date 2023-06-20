@@ -141,8 +141,8 @@ func handlerUserLogin(c *config.ServerConfig, w http.ResponseWriter, r *http.Req
 	}
 
 	token, err := utils.CreateJWT(db.User{
-		Email:      bodyJSON.Email,
-		UpdateTime: user.UpdateTime,
+		Email:    bodyJSON.Email,
+		UpdateAt: user.UpdateAt,
 	})
 
 	if err != nil {

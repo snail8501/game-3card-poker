@@ -53,8 +53,6 @@ func (u *UserService) Register(req RegisterReq) (db.User, error) {
 }
 
 func (u *UserService) CheckUser(req RegisterReq) error {
-	u.mux.Lock()
-	defer u.mux.Unlock()
 
 	dbUser, err := u.userDB.QueryByEmail(req.Email)
 	if err != nil {
@@ -84,10 +82,10 @@ func (u *UserService) GetByEmail(email string) (db.User, error) {
 
 func (u *UserService) ChangePassword(body db.User) (db.User, error) {
 	user := db.User{
-		ID:         body.ID,
-		Email:      body.Email,
-		Password:   body.Password,
-		UpdateTime: time.Now(),
+		ID:       body.ID,
+		Email:    body.Email,
+		Password: body.Password,
+		UpdateAt: time.Now(),
 	}
 	return u.userDB.Update(user)
 }
@@ -152,7 +150,7 @@ func (u *UserService) DeductAnteBetting(gameId string, currRound int, userIds []
 				UserId:        user.ID,
 				GameId:        gameId,
 				RoundID:       currRound,
-				Status:        constant.BET_STATE_ANTE,
+				State:         constant.BET_STATE_ANTE,
 				Amount:        userBetChips,
 				BalanceBefore: user.Balance,
 			}
@@ -193,7 +191,7 @@ func (u *UserService) DeductRaiseBetting(gameId string, currRound int, userId in
 			UserId:        user.ID,
 			GameId:        gameId,
 			RoundID:       currRound,
-			Status:        constant.BET_STATE_RAISE,
+			State:         constant.BET_STATE_RAISE,
 			Amount:        betChips,
 			BalanceBefore: user.Balance,
 		}
@@ -220,7 +218,7 @@ func (u *UserService) UpateWinBetting(gameId string, currRound int, userId int64
 
 		// 实际用户下注筹码
 		var countBetChips int64
-		if errs := tx.Model(&db.User{}).Where("game_id = ? and round_id = ? and state IN (?)", gameId, currRound, []int{constant.BET_STATE_ANTE, constant.BET_STATE_RAISE}).Count(&countBetChips).Error; errs != nil {
+		if errs := tx.Model(&db.UserHistory{}).Where("game_id = ? and round_id = ? and state IN (?)", gameId, currRound, []int{constant.BET_STATE_ANTE, constant.BET_STATE_RAISE}).Select("SUM(amount)").Scan(&countBetChips).Error; errs != nil {
 			return errs
 		}
 
@@ -238,7 +236,7 @@ func (u *UserService) UpateWinBetting(gameId string, currRound int, userId int64
 			UserId:        user.ID,
 			GameId:        gameId,
 			RoundID:       currRound,
-			Status:        constant.BET_STATE_WIN,
+			State:         constant.BET_STATE_WIN,
 			Amount:        totalBetChips,
 			BalanceBefore: user.Balance,
 		}

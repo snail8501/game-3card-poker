@@ -21,7 +21,7 @@ func CreateJWT(user db.User) (string, error) {
 	key := []byte(SECRET)
 	claims := Claims{
 		Email:          user.Email,
-		LastModifyTime: user.UpdateTime,
+		LastModifyTime: user.UpdateAt,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "3-card-game",                                      // 签发人
 			IssuedAt:  jwt.NewNumericDate(time.Now()),                     // 签发时间

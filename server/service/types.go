@@ -13,6 +13,7 @@ type DelayMsg struct {
 	UserId    int64  `json:"userId"`    // 用户ID
 	CurrRound int    `json:"currRound"` // 当前第几局
 	Timestamp int64  `json:"timestamp"` // 当前时间戳
+	BetChips  int64  `json:"betChips"`  // 下注金额
 }
 
 func (d *DelayMsg) ToJsonStr() string {
@@ -38,24 +39,28 @@ type JoinUser struct {
 }
 
 type GameRoom struct {
-	GameId            string        `json:"gameId"`            // 游戏ID
-	JoinUsers         map[int64]int `json:"joinUsers"`         // 加入用户ID
-	Minimum           int           `json:"minimum"`           // 最低人数
-	State             int           `json:"state"`             // 游戏状态
-	TotalRounds       int           `json:"totalRounds"`       // 总游戏局数
-	CurrRound         int           `json:"currRound"`         // 当前第几局
-	CurrLocation      int           `json:"currLocation"`      // 当前操作用户
-	CurrBetChips      int64         `json:"currBetChips"`      // 当前下注筹码
-	CurrBankerId      int64         `json:"currBankerId"`      // 当前庄家ID
-	TotalBetChips     int64         `json:"totalBetChips"`     // 总下注筹码
-	LowBetChips       int64         `json:"lowBetChips"`       // 最低下注筹码
-	TopBetChips       int64         `json:"topBetChips"`       // 封顶下注筹码
-	ExposedBetChips   int64         `json:"exposedBetChips"`   // 明牌下注筹码
-	ConcealedBetChips int64         `json:"concealedBetChips"` // 隐藏下注筹码
-	SetLocationTime   int64         `json:"setLocationTime"`   // 设置操作用户时间戳
-	CreateUser        int64         `json:"createUser"`        // 创建用户
-	CreateAt          time.Time     `json:"createAt"`          // 创建时间
+	GameId            string            `json:"gameId"`            // 游戏ID
+	JoinUsers         map[int64]int     `json:"joinUsers"`         // 加入用户ID
+	Minimum           int               `json:"minimum"`           // 最低人数
+	State             int               `json:"state"`             // 游戏状态
+	TotalRounds       int               `json:"totalRounds"`       // 总游戏局数
+	CurrRound         int               `json:"currRound"`         // 当前第几局
+	CurrLocation      int               `json:"currLocation"`      // 当前操作用户
+	CurrBetChips      int64             `json:"currBetChips"`      // 当前下注筹码
+	CurrBankerId      int64             `json:"currBankerId"`      // 当前庄家ID
+	TotalBetChips     int64             `json:"totalBetChips"`     // 总下注筹码
+	LowBetChips       int64             `json:"lowBetChips"`       // 最低下注筹码
+	TopBetChips       int64             `json:"topBetChips"`       // 封顶下注筹码
+	ExposedBetChips   int64             `json:"exposedBetChips"`   // 明牌下注筹码
+	ConcealedBetChips int64             `json:"concealedBetChips"` // 隐藏下注筹码
+	SetLocationTime   int64             `json:"setLocationTime"`   // 设置操作用户时间戳
+	Records           map[int64][]int64 `json:"records"`           // PK记录
+	BetChips          []int64           `json:"betChips"`          // 下注筹码记录
+	CreateUser        int64             `json:"createUser"`        // 创建用户
+	CreateAt          time.Time         `json:"createAt"`          // 创建时间
 }
+
+type Record string
 
 type Message struct {
 	MsgType int    `json:"msgType"` // 消息类型
@@ -91,6 +96,17 @@ func (d *CardMessage) ToJsonStr(msgType int) []byte {
 	return marshal
 }
 
+type CardEndMessage struct {
+	Message
+	CardList map[int64]string `json:"cards"` // 用户底牌内容
+}
+
+func (d *CardEndMessage) ToJsonStr(msgType int) []byte {
+	d.Message = Message{MsgType: msgType, MsgId: strings.ReplaceAll(uuid.New().String(), "-", "")}
+	marshal, _ := json.Marshal(d)
+	return marshal
+}
+
 type AutoBetMessage struct {
 	Message
 	IsAutoBet bool `json:"isAutoBet"` // 是否配置自动下注
@@ -116,5 +132,6 @@ type BroadcastMsg struct {
 	Room      *GameRoom   `json:"room"`            // 游戏房间
 	Users     []*JoinUser `json:"users"`           // 游戏加入用户列表
 	Event     *EventMsg   `json:"event,omitempty"` // 游戏操作事件类型
+	BetChips  []int64     `json:"betChips"`        // 下注筹码记录
 	Timestamp int64       `json:"timestamp"`       //时间戳
 }

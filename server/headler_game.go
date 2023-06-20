@@ -130,10 +130,10 @@ func handlerSocketConnection(c *config.ServerConfig, w http.ResponseWriter, r *h
 	}
 }
 
-func handlerUserJoinRoom(Game *service.Game, user db.User) error {
+func handlerUserJoinRoom(game *service.Game, user db.User) error {
 	// 用户已准备好开始
-	return Game.UserJoinRoom(user, true, nil, func(gameRoom *service.GameRoom) error {
-		dbUser, err := Game.UserService.GetById(user.ID)
+	return game.UserJoinRoom(user, true, nil, func(gameRoom *service.GameRoom) error {
+		dbUser, err := game.UserService.GetById(user.ID)
 		if err != nil {
 			log.Print("Query user error", err)
 			return constant.UserNotExistError
@@ -148,9 +148,9 @@ func handlerUserJoinRoom(Game *service.Game, user db.User) error {
 	})
 }
 
-func handlerStartGame(Game *service.Game, userId int64) error {
+func handlerStartGame(game *service.Game, userId int64) error {
 	// 设置游戏开始
-	return Game.StartGame(userId, func(gameRoom *service.GameRoom, joinUsers map[int64]*service.JoinUser, next func(map[int64]service.UserPoker) error) error {
+	return game.StartGame(userId, func(gameRoom *service.GameRoom, joinUsers map[int64]*service.JoinUser, next func(map[int64]service.UserPoker) error) error {
 
 		userIds := make([]int64, 0)
 		for id := range joinUsers {
@@ -164,12 +164,16 @@ func handlerStartGame(Game *service.Game, userId int64) error {
 		userPokers := cardPoker.LicenseCardPoker(userIds)
 
 		// 整体放入同一个事物中
-		return Game.UserService.DeductAnteBetting(gameRoom.GameId, gameRoom.CurrRound, userIds, gameRoom.LowBetChips, func(balanceMap map[int64]int64) error {
+		return game.UserService.DeductAnteBetting(gameRoom.GameId, gameRoom.CurrRound, userIds, gameRoom.LowBetChips, func(balanceMap map[int64]int64) error {
 			totalBetChips := int64(0)
 			for id, betChips := range balanceMap {
 				totalBetChips += betChips
 				joinUsers[id].TotalBetChips += betChips
+
+				// 下注筹码记录
+				gameRoom.BetChips = append(gameRoom.BetChips, betChips)
 			}
+
 			gameRoom.TotalBetChips = totalBetChips
 			gameRoom.ExposedBetChips = gameRoom.LowBetChips
 			gameRoom.ConcealedBetChips = gameRoom.LowBetChips
@@ -178,11 +182,11 @@ func handlerStartGame(Game *service.Game, userId int64) error {
 	})
 }
 
-func handlerLookCardGame(Game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
+func handlerLookCardGame(game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
 	// 设置链已查看状态
-	return Game.UserLookCard(userId, receiveMsg.CurrRound, func(gameRoom *service.GameRoom) (string, error) {
+	return game.UserLookCard(userId, receiveMsg.CurrRound, func(gameRoom *service.GameRoom) (string, error) {
 		// 获取链上3张牌值
-		userPoker, err := Game.GetUserPokerCache(context.Background(), gameRoom, userId)
+		userPoker, err := game.GetUserPokerCache(context.Background(), gameRoom, userId)
 		if err != nil {
 			return "", err
 		}
@@ -190,13 +194,13 @@ func handlerLookCardGame(Game *service.Game, userId int64, receiveMsg ReceiveMsg
 	})
 }
 
-func handlerGiveUpGame(Game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
-	return Game.UserGiveUpCard(userId, receiveMsg.CurrRound, nil)
+func handlerGiveUpGame(game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
+	return game.UserGiveUpCard(userId, receiveMsg.CurrRound, nil)
 }
 
 // handlerBettingGame (仅跟注/加注)或者(下注并与其他人Pk)
-func handlerBettingGame(Game *service.Game, userId int64, isPkCompare bool, receiveMsg ReceiveMsg) error {
-	return Game.UserBetting(userId, receiveMsg.CompareId, receiveMsg.CurrRound, receiveMsg.BetChips, nil, func(gameRoom *service.GameRoom, joinUser *service.JoinUser, callUpdateFunc func(bool, *service.UserPoker) error) error {
+func handlerBettingGame(game *service.Game, userId int64, isPkCompare bool, receiveMsg ReceiveMsg) error {
+	return game.UserBetting(userId, receiveMsg.CompareId, receiveMsg.CurrRound, receiveMsg.BetChips, nil, func(gameRoom *service.GameRoom, joinUser *service.JoinUser, callUpdateFunc func(bool, *service.UserPoker) error) error {
 
 		isPkSuccess := false
 		pkSuccPoker := &service.UserPoker{}
@@ -204,12 +208,12 @@ func handlerBettingGame(Game *service.Game, userId int64, isPkCompare bool, rece
 		// 获取userId,compareId两个用户的3张牌值,并比大小
 		if isPkCompare {
 			ctx := context.Background()
-			userPoker, err := Game.GetUserPokerCache(ctx, gameRoom, joinUser.UserId)
+			userPoker, err := game.GetUserPokerCache(ctx, gameRoom, joinUser.UserId)
 			if err != nil {
 				return err
 			}
 
-			pkPoker, err := Game.GetUserPokerCache(ctx, gameRoom, receiveMsg.CompareId)
+			pkPoker, err := game.GetUserPokerCache(ctx, gameRoom, receiveMsg.CompareId)
 			if err != nil {
 				return err
 			}
@@ -227,7 +231,8 @@ func handlerBettingGame(Game *service.Game, userId int64, isPkCompare bool, rece
 
 		// 整体放入同一个事物中
 		// 扣除用户的跟注/加注筹码-操作数据库
-		return Game.UserService.DeductRaiseBetting(gameRoom.GameId, gameRoom.CurrRound, joinUser.UserId, receiveMsg.BetChips, func(betChips int64) error {
+		return game.UserService.DeductRaiseBetting(gameRoom.GameId, gameRoom.CurrRound, joinUser.UserId, receiveMsg.BetChips, func(betChips int64) error {
+			// 记录全局下注最大值
 			if joinUser.IsLookCard {
 				// 明牌下注筹码
 				gameRoom.ExposedBetChips = betChips
@@ -235,6 +240,14 @@ func handlerBettingGame(Game *service.Game, userId int64, isPkCompare bool, rece
 				// 隐藏下注筹码
 				gameRoom.ConcealedBetChips = betChips
 			}
+
+			// 游戏过程中PK记录(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
+			if isPkCompare {
+				gameRoom.Records = game.GetGamePkCompareRecord(gameRoom.Records, []int64{userId, receiveMsg.CompareId})
+			}
+
+			// 下注筹码记录
+			gameRoom.BetChips = append(gameRoom.BetChips, betChips)
 
 			joinUser.TotalBetChips += betChips
 			gameRoom.TotalBetChips += betChips
@@ -244,8 +257,8 @@ func handlerBettingGame(Game *service.Game, userId int64, isPkCompare bool, rece
 }
 
 // handlerCompareGame 自动下注
-func handlerAutoBetGame(Game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
-	return Game.UserSetAutoBetting(userId, receiveMsg.IsAutoBet, receiveMsg.CurrRound)
+func handlerAutoBetGame(game *service.Game, userId int64, receiveMsg ReceiveMsg) error {
+	return game.UserSetAutoBetting(userId, receiveMsg.IsAutoBet, receiveMsg.CurrRound)
 }
 
 // handlerCreateGame 创建一个游戏房间
@@ -265,6 +278,8 @@ func handlerCreateGame(c *config.ServerConfig, w http.ResponseWriter, r *http.Re
 	gameRoom := &service.GameRoom{
 		GameId:        strings.ReplaceAll(uuid.New().String(), "-", ""),
 		JoinUsers:     make(map[int64]int, 0),
+		Records:       make(map[int64][]int64, 0),
+		BetChips:      make([]int64, 0),
 		Minimum:       bodyJSON.Minimum,
 		State:         constant.GAME_WAIT,
 		TotalRounds:   bodyJSON.TotalRounds,

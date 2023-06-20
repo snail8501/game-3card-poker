@@ -17,8 +17,8 @@ type User struct {
 	PrivateKey string    `json:"-"`
 	Address    string    `json:"-"`
 	Record     string    `json:"-"`
-	CreateTime time.Time `json:"-" gorm:"autoCreateTime:milli; not null; default:(datetime('now', 'localtime'))"`
-	UpdateTime time.Time `json:"-" gorm:"not null; default:(datetime('now', 'localtime'))"`
+	CreateAt   time.Time `json:"-" gorm:"autoCreateTime:milli; not null; default:(datetime('now', 'localtime'))"`
+	UpdateAt   time.Time `json:"-" gorm:"not null; default:(datetime('now', 'localtime'))"`
 }
 
 func (u *User) UserToJsonStr() string {

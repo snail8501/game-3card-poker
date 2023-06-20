@@ -10,6 +10,7 @@ import (
 	"game-3-card-poker/server/db"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/jinzhu/copier"
 	"github.com/redis/go-redis/v9"
 	"log"
 	"sort"
@@ -27,6 +28,40 @@ type Game struct {
 	RedisClient *redis.Client
 	DelayQueue  *daley.DelayQueue
 	UserService *UserService
+}
+
+// AutoBetDelayFunc 自动下注延迟队列
+var AutoBetDelayFunc = func(c Game, gameRoom *GameRoom, joinUser *JoinUser) {
+	if gameRoom.CurrLocation == joinUser.Location && joinUser.IsAutoBet {
+		// 下注最低筹码
+		lowBetChips, _ := c.GetCurrentLowBetChips(gameRoom, joinUser, nil)
+
+		// 延迟1秒倒计时->(用户设置自动跟注)
+		autBetMsg := DelayMsg{
+			DelayType: constant.DELAY_AUTOBET,
+			GameId:    gameRoom.GameId,
+			UserId:    joinUser.UserId,
+			CurrRound: gameRoom.CurrRound,
+			Timestamp: gameRoom.SetLocationTime,
+			BetChips:  lowBetChips,
+		}
+		c.DelayQueue.SendDelayMsg(autBetMsg.ToJsonStr(), time.Second, daley.WithRetryCount(5))
+	}
+}
+
+// TimeOutGiveUpDelayFunc 超时用户自动放弃
+var TimeOutGiveUpDelayFunc = func(c Game, gameRoom *GameRoom, joinUser *JoinUser) {
+	if gameRoom.CurrLocation == joinUser.Location {
+		// 延迟30秒倒计时->(超时用户自动放弃)
+		delayMsg := DelayMsg{
+			DelayType: constant.DELAY_GIVEUP,
+			GameId:    gameRoom.GameId,
+			UserId:    joinUser.UserId,
+			CurrRound: gameRoom.CurrRound,
+			Timestamp: gameRoom.SetLocationTime,
+		}
+		c.DelayQueue.SendDelayMsg(delayMsg.ToJsonStr(), 30*time.Second, daley.WithRetryCount(5))
+	}
 }
 
 // CheckAvailability 检查用户是否在当前游戏局中
@@ -78,7 +113,7 @@ func (c Game) CheckPlaying(ctx context.Context, userId int64, currRound int) (*G
 }
 
 // GetBroadcastMsg 获取广播消息
-func (c Game) GetBroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg *EventMsg) ([]*JoinUser, []byte, error) {
+func (c Game) GetBroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg *EventMsg) ([]byte, error) {
 
 	// 广播消息通知所有用户
 	userIds := make([]int64, 0)
@@ -107,15 +142,56 @@ func (c Game) GetBroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg 
 	// 升序
 	sort.Slice(joinUsers, func(i, j int) bool { return joinUsers[i].Location < joinUsers[j].Location })
 
+	var room GameRoom
+	copier.Copy(&room, &gameRoom)
+	if &room != nil {
+		room.BetChips = make([]int64, 0)
+		room.Records = make(map[int64][]int64, 0)
+	}
+
 	// 广播json字符串数组对象
 	msgJsonByte, err := json.Marshal(&BroadcastMsg{
 		Timestamp: time.Now().Unix(),
 		Message:   Message{constant.EVENT_JOIN_USER, strings.ReplaceAll(uuid.New().String(), "-", "")},
 		Event:     eventMsg,
-		Room:      gameRoom,
+		Room:      &room,
 		Users:     joinUsers,
+		BetChips:  gameRoom.BetChips,
 	})
-	return joinUsers, msgJsonByte, err
+	return msgJsonByte, err
+}
+
+// BroadcastWinMsg 广播游戏状态->(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
+func (c Game) BroadcastWinMsg(ctx context.Context, gameRoom *GameRoom, eventMsg *EventMsg) {
+	if gameRoom == nil || c.Clients == nil || len(c.Clients) <= 0 {
+		return
+	}
+
+	// 广播消息
+	c.BroadcastMsg(ctx, gameRoom, eventMsg)
+
+	// 每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌
+	if gameRoom.Records != nil && len(gameRoom.Records) > 0 {
+		for userId, records := range gameRoom.Records {
+			cardList := make(map[int64]string, 0)
+			userPoker, _ := c.GetUserPokerCache(context.Background(), gameRoom, userId)
+			if userPoker != nil {
+				cardList[userId] = userPoker.ToString()
+			}
+
+			for index := range records {
+				otherUserId := records[index]
+				otherPoker, _ := c.GetUserPokerCache(context.Background(), gameRoom, otherUserId)
+				if otherPoker != nil {
+					cardList[otherUserId] = otherPoker.ToString()
+				}
+			}
+
+			// PK失败方明牌
+			message := CardEndMessage{CardList: cardList}
+			c.SendMsgByUserId(ctx, gameRoom, userId, message.ToJsonStr(constant.EVENT_WIN_USER))
+		}
+	}
 }
 
 // BroadcastMsg 广播游戏状态->所有在线用户
@@ -125,17 +201,12 @@ func (c Game) BroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg *Ev
 	}
 
 	// 广播消息
-	joinUsers, msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, eventMsg)
+	msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, eventMsg)
 	for userId := range c.Clients {
 		clients := c.Clients[userId]
 		for token := range clients {
 			clients[token].WriteMessage(websocket.TextMessage, msgJsonByte)
 		}
-	}
-
-	// 游戏中,每次广播遍历用户是否最终赢家
-	if gameRoom.State == constant.GAME_PAYING {
-		c.CheckGameWinUser(ctx, gameRoom, joinUsers)
 	}
 }
 
@@ -157,61 +228,161 @@ func (c Game) SendMsgByUserId(ctx context.Context, gameRoom *GameRoom, userId in
 	}
 }
 
+// GetGamePkCompareRecord 游戏过程中PK记录(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
+func (c Game) GetGamePkCompareRecord(records map[int64][]int64, userIds []int64) map[int64][]int64 {
+	if records == nil {
+		records = make(map[int64][]int64, 0)
+	}
+
+	addRecordFunc := func(userId int64) []int64 {
+		userIdArr := records[userId]
+		if userIdArr == nil {
+			userIdArr = make([]int64, 0)
+		}
+
+		for index := range userIds {
+			srcUserId := userIds[index]
+			if userId == srcUserId {
+				continue
+			}
+
+			if !func() bool {
+				for indexArr := range userIdArr {
+					if userIdArr[indexArr] == srcUserId {
+						return true
+					}
+				}
+				return false
+			}() {
+				userIdArr = append(userIdArr, srcUserId)
+			}
+		}
+		return userIdArr
+	}
+
+	for addIndex := range userIds {
+		addUserId := userIds[addIndex]
+		records[addUserId] = addRecordFunc(addUserId)
+	}
+	return records
+}
+
 // CheckGameWinUser 最终赢家用户
-func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUsers []*JoinUser) {
+func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUsers []*JoinUser) bool {
 
-	if joinUsers == nil || len(joinUsers) <= 0 {
-		return
-	}
+	var topRecordUserIdArr []int64
 
-	winUsers := make([]*JoinUser, 0)
-	otherUsers := make([]*JoinUser, 0)
-	for index := range joinUsers {
-		user := joinUsers[index]
+	// 游戏中玩家列表
+	payingUsers := func() []*JoinUser {
+		users := make([]*JoinUser, 0)
+		for index := range joinUsers {
+			user := joinUsers[index]
+			if user.State == constant.EVENT_PLAYING_USER {
+				users = append(users, user)
+			}
+		}
+		return users
+	}()
 
-		// 还在游戏中的用户
-		if user.State == constant.EVENT_PLAYING_USER {
-			winUsers = append(winUsers, user)
+	getWinUserFunc := func() (bool, *JoinUser) {
+
+		// 仅剩一个游戏玩家判定为赢家
+		if len(payingUsers) == 1 {
+			return true, payingUsers[0]
 		}
 
-		// 其他非等待用户
-		if user.State != constant.EVENT_JOIN_USER {
-			otherUsers = append(otherUsers, user)
+		// 封顶全部开牌
+		if gameRoom.TotalBetChips >= gameRoom.TopBetChips {
+			joinUserMap := make(map[int64]*JoinUser, 0)
+			pkUserPokers := make(map[int64]*UserPoker, 0)
+			for index := range payingUsers {
+				joinUser := payingUsers[index]
+				joinUserMap[joinUser.UserId] = joinUser
+				topRecordUserIdArr = append(topRecordUserIdArr, joinUser.UserId)
+
+				// 获取用户底牌
+				userPoker, err := c.GetUserPokerCache(ctx, gameRoom, joinUser.UserId)
+				if err != nil {
+					pkUserPokers[joinUser.UserId] = &UserPoker{}
+					log.Printf("Get userId=%d poker cache error: %s", joinUser.UserId, err)
+					continue
+				}
+
+				// 收集所有游戏中玩家的底牌
+				pkUserPokers[joinUser.UserId] = userPoker
+			}
+
+			var pkUserId int64
+
+			// map遍历比较获取最大牌游戏用户
+			for userId, userPoker := range pkUserPokers {
+				poker, ok := pkUserPokers[pkUserId]
+				if !ok || userPoker.UserPokerPK(poker) {
+					pkUserId = userId
+				}
+			}
+			return true, joinUserMap[pkUserId]
 		}
+
+		return false, nil
 	}
 
-	// 仅剩一个游戏中用户则认为最终游戏获胜者
-	if len(winUsers) != 1 {
-		return
+	// 判定是否检查到玩家判赢条件
+	isWinGame, winJoinUser := getWinUserFunc()
+	if !isWinGame {
+		return false
 	}
 
 	// 整体放入同一个事物中
 	// 总筹码提现到最终赢家账户-操作数据库
-	user := winUsers[0]
-	err := c.UserService.UpateWinBetting(gameRoom.GameId, gameRoom.CurrRound, user.UserId, gameRoom.TotalBetChips, func(betChips int64) error {
-		user.State = constant.EVENT_WIN_USER
+	err := c.UserService.UpateWinBetting(gameRoom.GameId, gameRoom.CurrRound, winJoinUser.UserId, gameRoom.TotalBetChips, func(betChips int64) error {
+		winJoinUser.State = constant.EVENT_WIN_USER
 		gameRoom.State = constant.GAME_ENDED
 
 		// 更新游戏状态gameRoom,users
 		users := make(map[int64]*JoinUser, 0)
-		users[user.UserId] = user
+		users[winJoinUser.UserId] = winJoinUser
+
+		// 游戏过程中PK记录(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
+		if topRecordUserIdArr != nil && len(topRecordUserIdArr) > 0 {
+			gameRoom.Records = c.GetGamePkCompareRecord(gameRoom.Records, topRecordUserIdArr)
+
+			for index := range payingUsers {
+				payUser := payingUsers[index]
+				if payUser.UserId != winJoinUser.UserId {
+					// PK输家->用户状态
+					payUser.State = constant.EVENT_COMPARE_LOSE_USER
+					users[payUser.UserId] = payUser
+				}
+			}
+		}
+
 		return c.setBatchCache(ctx, gameRoom, users)
 	})
 
 	if err != nil {
 		log.Println("Update win game user error", err)
-		return
+		return true
 	}
 
-	// 发送获胜者的广播消息
-	eventMsg := &EventMsg{
+	// 发送获胜者的广播消息->(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
+	c.BroadcastWinMsg(ctx, gameRoom, &EventMsg{
 		Type:   constant.EVENT_WIN_USER,
-		UserId: user.UserId,
-	}
-	c.BroadcastMsg(ctx, gameRoom, eventMsg)
+		UserId: winJoinUser.UserId,
+	})
 
 	// 下一局开始,获胜者成为新庄家
 	if gameRoom.TotalRounds > gameRoom.CurrRound {
+		// 默认自动加入下一局用户
+		otherUsers := make([]*JoinUser, 0)
+		for i := range joinUsers {
+			user := joinUsers[i]
+			// 其他非等待用户
+			if user.State != constant.EVENT_JOIN_USER {
+				otherUsers = append(otherUsers, user)
+			}
+		}
+
 		// 延迟2秒执行
 		go func() {
 			timer := time.NewTimer(2 * time.Second)
@@ -222,26 +393,27 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 			gameRoom.CurrBetChips = 0
 			gameRoom.CurrLocation = 0
 			gameRoom.State = constant.GAME_WAIT
-			gameRoom.CurrBankerId = user.UserId
+			gameRoom.CurrBankerId = winJoinUser.UserId
 			gameRoom.CurrRound = gameRoom.CurrRound + 1
 			gameRoom.ExposedBetChips = gameRoom.LowBetChips
 			gameRoom.ConcealedBetChips = gameRoom.LowBetChips
 			gameRoom.JoinUsers = make(map[int64]int, 0)
+			gameRoom.Records = make(map[int64][]int64, 0)
+			gameRoom.BetChips = make([]int64, 0)
 
 			callFunc := func(room *GameRoom, joinUser map[int64]*JoinUser) {
 				// 将当前获取赢家排第一位
-				addTenNum := true
 				newUsers := make([]*JoinUser, 0)
 				for index := range otherUsers {
 					newUser := otherUsers[index]
-					if newUser.UserId == user.UserId {
-						addTenNum = false
+					if newUser.UserId == winJoinUser.UserId {
+						// 游戏赢家作为庄家排除在排序中
 						continue
 					}
 
-					// 通过+100将赢家排第一位(前提otherUsers是有序)
-					if addTenNum {
-						newUser.Location += 100
+					// 赢家排第一位,赢家之前通过+100000对应追加到尾部
+					if newUser.Location < winJoinUser.Location {
+						newUser.Location += 100000
 					}
 
 					newUser.State = constant.EVENT_JOIN_USER
@@ -267,12 +439,14 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 			}
 
 			c.CreateGames(gameRoom, db.User{
-				ID:       user.UserId,
-				Nickname: user.Nickname,
-				HeadPic:  user.HeadPic,
+				ID:       winJoinUser.UserId,
+				Nickname: winJoinUser.Nickname,
+				HeadPic:  winJoinUser.HeadPic,
 			}, callFunc)
 		}()
 	}
+
+	return true
 }
 
 // SetNextOperateUser 设置下个操作用户
@@ -283,23 +457,39 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 		return
 	}
 
+	joinUsers := make([]*JoinUser, 0)
+	for userId := range gameRoom.JoinUsers {
+		if gameRoom.JoinUsers[userId] == gameRoom.CurrRound {
+			joinUser := c.GetJoinUser(ctx, userId, gameRoom.CurrRound)
+			if joinUser != nil {
+				joinUsers = append(joinUsers, joinUser)
+			}
+		}
+	}
+
+	// 判定是否检查到玩家判赢条件
+	if c.CheckGameWinUser(ctx, gameRoom, joinUsers) {
+		return
+	}
+
 	// 校验操作用户与游戏中的位置是否匹配
 	if gameRoom.CurrLocation != operateLocation {
 		return
 	}
 
-	payingUsers := make([]*JoinUser, 0)
-	for userId := range gameRoom.JoinUsers {
-		if gameRoom.JoinUsers[userId] == gameRoom.CurrRound {
-			joinUser := c.GetJoinUser(ctx, userId, gameRoom.CurrRound)
-			if joinUser != nil && joinUser.State == constant.EVENT_PLAYING_USER {
-				payingUsers = append(payingUsers, joinUser)
+	// 游戏中玩家列表
+	payingUsers := func() []*JoinUser {
+		users := make([]*JoinUser, 0)
+		for index := range joinUsers {
+			user := joinUsers[index]
+			if user.State == constant.EVENT_PLAYING_USER {
+				users = append(users, user)
 			}
 		}
-	}
+		return users
+	}()
 
-	// 玩家必须大于
-	if len(payingUsers) <= 1 {
+	if len(payingUsers) <= 0 {
 		return
 	}
 
@@ -336,29 +526,25 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 
 		// 用户已设置自动跟注
 		if operateUser.IsAutoBet {
-			// 延迟15秒倒计时->(用户设置自动跟注)
-			delayMsg := DelayMsg{
-				DelayType: constant.DELAY_AUTOBET,
-				GameId:    gameRoom.GameId,
-				UserId:    operateUser.UserId,
-				CurrRound: gameRoom.CurrRound,
-				Timestamp: gameRoom.SetLocationTime,
-			}
-			c.DelayQueue.SendDelayMsg(delayMsg.ToJsonStr(), 1*time.Second, daley.WithRetryCount(5))
+			// 自动下注延迟队列
+			AutoBetDelayFunc(c, gameRoom, operateUser)
 		} else {
-			// 延迟15秒倒计时->(超时用户自动放弃)
-			delayMsg := DelayMsg{
-				DelayType: constant.DELAY_GIVEUP,
-				GameId:    gameRoom.GameId,
-				UserId:    operateUser.UserId,
-				CurrRound: gameRoom.CurrRound,
-				Timestamp: gameRoom.SetLocationTime,
-			}
-			c.DelayQueue.SendDelayMsg(delayMsg.ToJsonStr(), 15*time.Second, daley.WithRetryCount(5))
+			// 超时自动放弃
+			TimeOutGiveUpDelayFunc(c, gameRoom, operateUser)
 		}
 
+		// 下注最低筹码
+		lowBetChips, _ := c.GetCurrentLowBetChips(gameRoom, operateUser, nil)
+
 		// 广播消息通知所有用户
-		c.BroadcastMsg(ctx, gameRoom, &EventMsg{Type: constant.EVENT_CURRENT_USER, UserId: operateUser.UserId, Location: operateUser.Location, CountdownSecond: 15})
+		eventMsg := EventMsg{
+			Type:            constant.EVENT_CURRENT_USER,
+			UserId:          operateUser.UserId,
+			Location:        operateUser.Location,
+			CountdownSecond: 15,
+			BetChips:        lowBetChips,
+		}
+		c.BroadcastMsg(ctx, gameRoom, &eventMsg)
 	}()
 }
 
@@ -371,27 +557,34 @@ func (c Game) CreateGames(gameRoom *GameRoom, user db.User, callFunc func(*GameR
 	return c.UserJoinRoom(user, false, callFunc, nil)
 }
 
-func (c Game) CheckBetChips(gameRoom *GameRoom, joinUser *JoinUser, checkFunc func(int64) error) (int64, error) {
-	var betChips int64
+// GetCurrentLowBetChips 获取当前投注最低筹码
+func (c Game) GetCurrentLowBetChips(gameRoom *GameRoom, joinUser *JoinUser, checkFunc func(int64) error) (int64, error) {
 	if joinUser.IsLookCard {
+		// 已看牌
 		exposedBetChips := gameRoom.ConcealedBetChips * 2
 		if exposedBetChips < gameRoom.ExposedBetChips {
 			exposedBetChips = gameRoom.ExposedBetChips
 		}
 
-		return
-
-		if exposedBetChips > betChips {
-
+		if checkFunc != nil {
+			if err := checkFunc(exposedBetChips); err != nil {
+				return exposedBetChips, err
+			}
 		}
-	}
-
-	if checkFunc != nil {
-		if err := checkFunc(betChips); err != nil {
-			return betChips, err
+		return exposedBetChips, nil
+	} else {
+		concealedBetChips := gameRoom.ExposedBetChips / 2
+		if concealedBetChips < gameRoom.ConcealedBetChips {
+			concealedBetChips = gameRoom.ConcealedBetChips
 		}
+
+		if checkFunc != nil {
+			if err := checkFunc(concealedBetChips); err != nil {
+				return concealedBetChips, err
+			}
+		}
+		return concealedBetChips, nil
 	}
-	return 0, nil
 }
 
 // DelayCallback 延迟队列消息
@@ -399,7 +592,7 @@ func (c Game) DelayCallback(delayMsg DelayMsg) bool {
 
 	switch delayMsg.DelayType {
 	case constant.DELAY_AUTOBET:
-		err := c.UserBetting(delayMsg.UserId, 0, delayMsg.CurrRound, 0, func(gameRoom *GameRoom, joinUser *JoinUser) error {
+		err := c.UserBetting(delayMsg.UserId, 0, delayMsg.CurrRound, delayMsg.BetChips, func(gameRoom *GameRoom, joinUser *JoinUser) error {
 			if gameRoom.CurrLocation != joinUser.Location || gameRoom.SetLocationTime != delayMsg.Timestamp {
 				// 延续消息处理过期
 				return constant.DelayOperateExpiredError
@@ -408,7 +601,7 @@ func (c Game) DelayCallback(delayMsg DelayMsg) bool {
 		}, func(gameRoom *GameRoom, joinUser *JoinUser, callUpdateFunc func(bool, *UserPoker) error) error {
 			// 整体放入同一个事物中
 			// 扣除用户的跟注/加注筹码-操作数据库
-			return c.UserService.DeductRaiseBetting(gameRoom.GameId, gameRoom.CurrRound, joinUser.UserId, 0, func(betChips int64) error {
+			return c.UserService.DeductRaiseBetting(gameRoom.GameId, gameRoom.CurrRound, joinUser.UserId, delayMsg.BetChips, func(betChips int64) error {
 				if joinUser.IsLookCard {
 					// 明牌下注筹码
 					gameRoom.ExposedBetChips = betChips
@@ -417,33 +610,46 @@ func (c Game) DelayCallback(delayMsg DelayMsg) bool {
 					gameRoom.ConcealedBetChips = betChips
 				}
 
+				// 下注筹码记录
+				gameRoom.BetChips = append(gameRoom.BetChips, betChips)
+
 				joinUser.TotalBetChips += betChips
 				gameRoom.TotalBetChips += betChips
 				return callUpdateFunc(false, nil)
 			})
 		})
 
-		//  下注金额不足取消自动操作
-		c.UserSetAutoBetting(delayMsg.UserId, false, delayMsg.CurrRound)
-
 		if err != nil {
+			if errors.Is(err, constant.GameRaisBetNotEnoughError) {
+				//  下注金额不足取消自动操作
+				c.UserSetAutoBetting(delayMsg.UserId, false, delayMsg.CurrRound)
+			}
 			log.Printf("operate delay userId=%d, auto betting error: %s", delayMsg.UserId, err.Error())
 		}
 		break
 	case constant.DELAY_GIVEUP:
 		// 超时用户自动放弃
-		//err := c.UserGiveUpCard(delayMsg.UserId, delayMsg.CurrRound, func(gameRoom *GameRoom, joinUser *JoinUser) error {
-		//	if gameRoom.CurrLocation != joinUser.Location || gameRoom.SetLocationTime != delayMsg.Timestamp {
-		//		// 延续消息处理过期
-		//		return constant.DelayOperateExpiredError
-		//	}
-		//	return nil
-		//})
-		//
-		//if err != nil {
-		//	log.Printf("operate delay userId=%d, auto give up card error: %s", delayMsg.UserId, err.Error())
-		//}
-		//break
+		err := c.UserGiveUpCard(delayMsg.UserId, delayMsg.CurrRound, func(gameRoom *GameRoom, joinUser *JoinUser) error {
+			if gameRoom.CurrLocation != joinUser.Location || gameRoom.SetLocationTime != delayMsg.Timestamp {
+				// 延续消息处理过期
+				return constant.DelayOperateExpiredError
+			}
+
+			// 游戏玩家是否设置自动下注
+			if joinUser.IsAutoBet {
+				// 自动下注延迟队列
+				AutoBetDelayFunc(c, gameRoom, joinUser)
+
+				// 用户设置自动下注操作
+				return constant.UserSetAutoBettingError
+			}
+			return nil
+		})
+
+		if err != nil {
+			log.Printf("operate delay userId=%d, auto give up card error: %s", delayMsg.UserId, err.Error())
+		}
+		break
 	}
 	return true
 }
@@ -487,7 +693,7 @@ func (c Game) StartGame(startUserId int64, handlerFunc func(*GameRoom, map[int64
 			// 统计已准备好开始游戏的用户
 			if joinUser.State == constant.EVENT_READY_USER {
 				readyUsers = append(readyUsers, joinUser)
-			} else if gameRoom.CurrBankerId == startUserId {
+			} else if joinUser.UserId == gameRoom.CurrBankerId {
 				// 庄家可直接进入开始状态(忽略准备状态)
 				readyUsers = append(readyUsers, joinUser)
 			}
@@ -505,7 +711,6 @@ func (c Game) StartGame(startUserId int64, handlerFunc func(*GameRoom, map[int64
 		joinUser := readyUsers[index]
 		joinUser.State = constant.EVENT_PLAYING_USER
 		joinUser.IsLookCard = false
-		joinUser.IsAutoBet = false
 		joinUsers[joinUser.UserId] = joinUser
 	}
 
@@ -513,6 +718,8 @@ func (c Game) StartGame(startUserId int64, handlerFunc func(*GameRoom, map[int64
 	errs := handlerFunc(gameRoom, joinUsers, func(userPokers map[int64]UserPoker) error {
 		// 更新缓存 gameRoom，joinUsers
 		gameRoom.CurrLocation = 0
+		gameRoom.ExposedBetChips = gameRoom.LowBetChips
+		gameRoom.ConcealedBetChips = gameRoom.LowBetChips
 		gameRoom.State = constant.GAME_PAYING
 		return c.setPokerBatchCache(ctx, gameRoom, joinUsers, userPokers)
 	})
@@ -555,7 +762,7 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 
 	// 指定当前用户发现消息
 	sendMsgByIdFunc := func() {
-		_, msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, nil)
+		msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, nil)
 		c.SendMsgByUserId(ctx, gameRoom, loginUser.ID, msgJsonByte)
 	}
 
@@ -650,6 +857,7 @@ func (c Game) UserLookCard(userId int64, currRound int, handlerFunc func(*GameRo
 	joinUser := c.GetJoinUser(ctx, userId, gameRoom.CurrRound)
 	if !joinUser.IsLookCard {
 		joinUser.IsLookCard = true
+		joinUser.IsAutoBet = false
 
 		// 更新缓存 joinUser
 		if errs := c.setJoinUserCache(ctx, gameRoom, joinUser); errs != nil {
@@ -701,6 +909,7 @@ func (c Game) UserGiveUpCard(userId int64, currRound int, autoDelayFunc func(*Ga
 
 	// 更新缓存状态,设置已看牌
 	if joinUser.State != constant.EVENT_GIVE_UP_USER {
+		joinUser.IsAutoBet = false
 		joinUser.State = constant.EVENT_GIVE_UP_USER
 
 		// 更新缓存 joinUser
@@ -761,12 +970,31 @@ func (c Game) UserBetting(userId, compareId int64, currRound int, betChips int64
 		}
 	}
 
-	// 下注并找用户比较大小
+	// 检查下注筹码是否符合要求
+	_, err = c.GetCurrentLowBetChips(gameRoom, joinUser, func(lowBetChips int64) error {
+		// 下注筹码不能低于前者
+		if lowBetChips > betChips {
+			return constant.GameRaisBetNotEnoughError
+		}
+		return nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// 下注并找用户比较大小(达到封顶则直接进入全部比牌)
 	isPkRequest := false
 	var compareUser *JoinUser
-	if compareId > 0 {
+	if compareId > 0 && (gameRoom.TotalBetChips+betChips) < gameRoom.TopBetChips {
+
 		// PK类型的请求
 		isPkRequest = true
+
+		// pk对象不能是自己
+		if userId == compareId {
+			return constant.GamePkUserMySelfError
+		}
 
 		// 检查当前用户的状态是否符合要求
 		compareUser = c.GetJoinUser(ctx, compareId, gameRoom.CurrRound)
@@ -871,6 +1099,9 @@ func (c Game) UserSetAutoBetting(userId int64, isAutoBet bool, currRound int) er
 	if errs := c.setJoinUserCache(ctx, gameRoom, joinUser); errs != nil {
 		return errs
 	}
+
+	// 自动下注延迟队列
+	AutoBetDelayFunc(c, gameRoom, joinUser)
 
 	// 发送消息->指定用户
 	message := AutoBetMessage{IsAutoBet: isAutoBet}

@@ -75,7 +75,7 @@ func RequireAuth(next RequestHandler) RequestHandler {
 			return
 		}
 
-		if !claims.LastModifyTime.Equal(user.UpdateTime) {
+		if !claims.LastModifyTime.Equal(user.UpdateAt) {
 			response.Fail(constant.Code10012, constant.UserNotLogin, w)
 			return
 		}
@@ -139,7 +139,7 @@ func RequireWebSocketAuth(next RequestHandler) RequestHandler {
 			return
 		}
 
-		if !claims.LastModifyTime.Equal(user.UpdateTime) {
+		if !claims.LastModifyTime.Equal(user.UpdateAt) {
 			errorCallbackFunc(c, w, r, model.Response{
 				Code:    constant.Code10012,
 				Message: constant.UserNotLogin,
