@@ -60,7 +60,7 @@ var TimeOutGiveUpDelayFunc = func(c Game, gameRoom *GameRoom, joinUser *JoinUser
 			CurrRound: gameRoom.CurrRound,
 			Timestamp: gameRoom.SetLocationTime,
 		}
-		c.DelayQueue.SendDelayMsg(delayMsg.ToJsonStr(), 30*time.Second, daley.WithRetryCount(5))
+		c.DelayQueue.SendDelayMsg(delayMsg.ToJsonStr(), CountdownSecond*time.Second, daley.WithRetryCount(5))
 	}
 }
 
@@ -73,7 +73,7 @@ func (c Game) CheckAvailability(ctx context.Context, userId int64) (*GameRoom, e
 
 	// 游戏已结束
 	if gameRoom.State == constant.GAME_ENDED {
-		return nil, constant.GameEndError
+		return gameRoom, constant.GameEndError
 	}
 
 	// 是否已加入
@@ -127,13 +127,13 @@ func (c Game) GetBroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg 
 
 	// 从数据库中当前用户的账号筹码
 	if userIds != nil && len(userIds) > 0 {
-		balanceMap, err := c.UserService.GetBalancesByIds(userIds)
-		if err == nil && balanceMap != nil && len(balanceMap) > 0 {
+		userMap, err := c.UserService.GetUsersByIds(userIds)
+		if err == nil && userMap != nil && len(userMap) > 0 {
 			for index := range joinUsers {
 				user := joinUsers[index]
-				balance, ok := balanceMap[user.UserId]
-				if ok {
-					user.AccountBetChips = balance
+				if dbUser, ok := userMap[user.UserId]; ok {
+					user.AccountBetChips = dbUser.Balance
+					user.HeadPic = dbUser.HeadPic
 				}
 			}
 		}
@@ -167,9 +167,6 @@ func (c Game) BroadcastWinMsg(ctx context.Context, gameRoom *GameRoom, eventMsg 
 		return
 	}
 
-	// 广播消息
-	c.BroadcastMsg(ctx, gameRoom, eventMsg)
-
 	// 每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌
 	if gameRoom.Records != nil && len(gameRoom.Records) > 0 {
 		for userId, records := range gameRoom.Records {
@@ -187,11 +184,14 @@ func (c Game) BroadcastWinMsg(ctx context.Context, gameRoom *GameRoom, eventMsg 
 				}
 			}
 
-			// PK失败方明牌
+			// 游戏结束定向广播关联牌值
 			message := CardEndMessage{CardList: cardList}
 			c.SendMsgByUserId(ctx, gameRoom, userId, message.ToJsonStr(constant.EVENT_WIN_USER))
 		}
 	}
+
+	// 广播消息
+	c.BroadcastMsg(ctx, gameRoom, eventMsg)
 }
 
 // BroadcastMsg 广播游戏状态->所有在线用户
@@ -333,9 +333,12 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 		return false
 	}
 
+	// todo 最终赢家数据上链
+	//go c.SaveRound(gameRoom, winJoinUser.UserId, gameRoom.TotalBetChips)
+
 	// 整体放入同一个事物中
 	// 总筹码提现到最终赢家账户-操作数据库
-	err := c.UserService.UpateWinBetting(gameRoom.GameId, gameRoom.CurrRound, winJoinUser.UserId, gameRoom.TotalBetChips, func(betChips int64) error {
+	records, err := c.UserService.UpateWinBetting(gameRoom.GameId, gameRoom.CurrRound, winJoinUser.UserId, gameRoom.TotalBetChips, func(betChips int64) error {
 		winJoinUser.State = constant.EVENT_WIN_USER
 		gameRoom.State = constant.GAME_ENDED
 
@@ -365,14 +368,30 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 		return true
 	}
 
+	//  检查游戏是否结束
+	isGameOver := false
+	if gameRoom.TotalRounds <= gameRoom.CurrRound {
+		// 游戏结束
+		isGameOver = true
+		records = c.UserService.GetHisotryRecordList(gameRoom.GameId)
+		if records != nil && len(records) > 0 {
+			// 降序
+			sort.Slice(records, func(i, j int) bool {
+				return records[i].Amount > records[j].Amount
+			})
+		}
+	}
+
 	// 发送获胜者的广播消息->(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
 	c.BroadcastWinMsg(ctx, gameRoom, &EventMsg{
-		Type:   constant.EVENT_WIN_USER,
-		UserId: winJoinUser.UserId,
+		Type:       constant.EVENT_OVER,
+		UserId:     winJoinUser.UserId,
+		IsGameOver: isGameOver,
+		Records:    records,
 	})
 
 	// 下一局开始,获胜者成为新庄家
-	if gameRoom.TotalRounds > gameRoom.CurrRound {
+	if !isGameOver {
 		// 默认自动加入下一局用户
 		otherUsers := make([]*JoinUser, 0)
 		for i := range joinUsers {
@@ -390,8 +409,8 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 
 			// 重置游戏设置
 			gameRoom.CurrLocation = 0
+			gameRoom.CurrTimeStamp = 0
 			gameRoom.CurrBetChips = 0
-			gameRoom.CurrLocation = 0
 			gameRoom.State = constant.GAME_WAIT
 			gameRoom.CurrBankerId = winJoinUser.UserId
 			gameRoom.CurrRound = gameRoom.CurrRound + 1
@@ -439,9 +458,9 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 			}
 
 			c.CreateGames(gameRoom, db.User{
-				ID:       winJoinUser.UserId,
-				Nickname: winJoinUser.Nickname,
-				HeadPic:  winJoinUser.HeadPic,
+				ID:      winJoinUser.UserId,
+				Address: winJoinUser.Address,
+				HeadPic: winJoinUser.HeadPic,
 			}, callFunc)
 		}()
 	}
@@ -510,7 +529,7 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 
 	// 更新游戏房间信息
 	gameRoom.CurrLocation = location
-	gameRoom.SetLocationTime = time.Now().Unix()
+	gameRoom.CurrTimeStamp = time.Now().Unix()
 	err := c.setGameRoomCache(context.Background(), gameRoom)
 	if err != nil {
 		log.Println(err)
@@ -519,7 +538,7 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 
 	// 延迟1秒执行
 	go func() {
-		timer := time.NewTimer(1 * time.Second)
+		timer := time.NewTimer(time.Second)
 		<-timer.C
 
 		operateUser := locationUsers[location]
@@ -541,7 +560,8 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 			Type:            constant.EVENT_CURRENT_USER,
 			UserId:          operateUser.UserId,
 			Location:        operateUser.Location,
-			CountdownSecond: 15,
+			TotalSecond:     CountdownSecond,
+			CountdownSecond: CountdownSecond,
 			BetChips:        lowBetChips,
 		}
 		c.BroadcastMsg(ctx, gameRoom, &eventMsg)
@@ -718,6 +738,7 @@ func (c Game) StartGame(startUserId int64, handlerFunc func(*GameRoom, map[int64
 	errs := handlerFunc(gameRoom, joinUsers, func(userPokers map[int64]UserPoker) error {
 		// 更新缓存 gameRoom，joinUsers
 		gameRoom.CurrLocation = 0
+		gameRoom.CurrTimeStamp = 0
 		gameRoom.ExposedBetChips = gameRoom.LowBetChips
 		gameRoom.ConcealedBetChips = gameRoom.LowBetChips
 		gameRoom.State = constant.GAME_PAYING
@@ -747,9 +768,34 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 		defer c.Mutex.Unlock()
 	}
 
+	// 指定当前用户发现消息
+	sendMsgByIdFunc := func(gameRoom *GameRoom, eventMsg *EventMsg) {
+		msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, eventMsg)
+		c.SendMsgByUserId(ctx, gameRoom, loginUser.ID, msgJsonByte)
+	}
+
 	// 检查用户是否当前局游戏中
 	gameRoom, err := c.CheckAvailability(ctx, loginUser.ID)
 	if err != nil && !errors.Is(err, constant.GameNotInJoinError) && !errors.Is(err, constant.RoundError) {
+		if errors.Is(err, constant.GameEndError) {
+			sendMsgByIdFunc(gameRoom, func() *EventMsg {
+				records := c.UserService.GetHisotryRecordList(gameRoom.GameId)
+				if records != nil && len(records) > 0 {
+					// 降序
+					sort.Slice(records, func(i, j int) bool {
+						return records[i].Amount > records[j].Amount
+					})
+				}
+
+				return &EventMsg{
+					Type:       constant.EVENT_OVER,
+					IsGameOver: true,
+					UserId:     records[0].UserId,
+					Records:    records,
+				}
+			}())
+			return nil
+		}
 		return err
 	}
 
@@ -760,19 +806,47 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 		}
 	}
 
-	// 指定当前用户发现消息
-	sendMsgByIdFunc := func() {
-		msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, nil)
-		c.SendMsgByUserId(ctx, gameRoom, loginUser.ID, msgJsonByte)
-	}
-
 	// 当前游戏中
 	if gameRoom.State == constant.GAME_PAYING {
+		sendMsgByIdFunc(gameRoom, func() *EventMsg {
+			eventMsg := &EventMsg{Type: constant.EVENT_CURRENT_USER}
+			for userId := range gameRoom.JoinUsers {
+				if user := c.GetJoinUser(ctx, userId, gameRoom.CurrRound); user != nil && user.Location == gameRoom.CurrLocation {
+					// 下注最低筹码
+					lowBetChips, _ := c.GetCurrentLowBetChips(gameRoom, user, nil)
+
+					// 倒计时秒+1
+					diffTimeStamp := time.Now().Unix() - gameRoom.CurrTimeStamp
+					if diffTimeStamp > 0 {
+						eventMsg.TotalSecond = CountdownSecond
+						if diffTimeStamp >= CountdownSecond {
+							eventMsg.CountdownSecond = CountdownSecond
+						} else {
+							eventMsg.CountdownSecond = (CountdownSecond - diffTimeStamp) + 1
+						}
+					}
+
+					eventMsg.UserId = user.UserId
+					eventMsg.Location = user.Location
+					eventMsg.BetChips = lowBetChips
+				}
+
+				// 已看牌或者已弃牌
+				if userId == loginUser.ID {
+					joinUser := c.GetJoinUser(ctx, loginUser.ID, gameRoom.CurrRound)
+					if joinUser != nil && (joinUser.IsLookCard || joinUser.State > constant.EVENT_PLAYING_USER) {
+						// 获取链上3张牌值
+						if userPoker, errs := c.GetUserPokerCache(context.Background(), gameRoom, userId); errs == nil {
+							eventMsg.MyselfCard = userPoker.ToString()
+						}
+					}
+				}
+			}
+			return eventMsg
+		}())
+
 		// 当前用户游戏中或者当前用户作为旁观者在房间中
 		if err == nil || errors.Is(err, constant.RoundError) {
-			if c.Clients != nil && c.Clients[loginUser.ID] != nil && len(c.Clients[loginUser.ID]) > 0 {
-				sendMsgByIdFunc()
-			}
 			return nil
 		}
 
@@ -791,14 +865,15 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 	if joinUser != nil {
 		// 状态一致无须修改
 		if state == joinUser.State || joinUser.State == constant.EVENT_READY_USER {
-			sendMsgByIdFunc()
+			sendMsgByIdFunc(gameRoom, nil)
 			return nil
 		}
 	} else {
 		joinUser = &JoinUser{
 			UserId:        loginUser.ID,
 			State:         state,
-			Nickname:      loginUser.Nickname,
+			Address:       loginUser.Address,
+			HeadPic:       loginUser.HeadPic,
 			IsBanker:      gameRoom.CurrBankerId == loginUser.ID,
 			IsLookCard:    false,
 			IsAutoBet:     false,
@@ -810,6 +885,7 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 	gameRoom.JoinUsers[loginUser.ID] = gameRoom.CurrRound
 	joinUsers := make(map[int64]*JoinUser, 0)
 	joinUser.State = state
+	joinUser.HeadPic = loginUser.HeadPic
 	joinUsers[loginUser.ID] = joinUser
 
 	// 自定义回调函数
@@ -866,7 +942,8 @@ func (c Game) UserLookCard(userId int64, currRound int, handlerFunc func(*GameRo
 	}
 
 	// 发送消息->指定用户
-	message := CardMessage{Card: cardStr}
+	lowBetChips, _ := c.GetCurrentLowBetChips(gameRoom, joinUser, nil)
+	message := CardMessage{Card: cardStr, BetChips: lowBetChips}
 	c.SendMsgByUserId(context.Background(), gameRoom, userId, message.ToJsonStr(constant.EVENT_LOOK_CARD))
 
 	// 广播消息通知所有用户
@@ -917,6 +994,15 @@ func (c Game) UserGiveUpCard(userId int64, currRound int, autoDelayFunc func(*Ga
 		if err != nil {
 			return err
 		}
+	}
+
+	// 发送消息->指定用户
+	userPoker, err := c.GetUserPokerCache(ctx, gameRoom, joinUser.UserId)
+	if err == nil {
+		// 下注最低筹码
+		lowBetChips, _ := c.GetCurrentLowBetChips(gameRoom, joinUser, nil)
+		message := CardMessage{Card: userPoker.ToString(), BetChips: lowBetChips}
+		c.SendMsgByUserId(context.Background(), gameRoom, userId, message.ToJsonStr(constant.EVENT_LOOK_CARD))
 	}
 
 	// 广播消息通知所有用户
@@ -1054,10 +1140,11 @@ func (c Game) UserBetting(userId, compareId int64, currRound int, betChips int64
 	// PK类型的请求
 	if isPkRequest {
 		eventMsg.CompareId = compareId
-		eventMsg.Type = constant.EVENT_WIN_USER
+		eventMsg.Type = constant.EVENT_COMPARE_LOSE_USER
+		eventMsg.WinUserId = userId
 		if !pkResult {
 			// 设置自己PK失败
-			eventMsg.Type = joinUser.State
+			eventMsg.WinUserId = compareId
 		}
 	}
 

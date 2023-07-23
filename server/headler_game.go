@@ -162,7 +162,8 @@ func handlerStartGame(game *service.Game, userId int64) error {
 		cardPoker.InitShufflePoker()
 		cardPoker.CutCardPoker()
 		userPokers := cardPoker.LicenseCardPoker(userIds)
-
+		// todo 合约
+		// game.SaveUserPoker(gameRoom, userPokers)
 		// 整体放入同一个事物中
 		return game.UserService.DeductAnteBetting(gameRoom.GameId, gameRoom.CurrRound, userIds, gameRoom.LowBetChips, func(balanceMap map[int64]int64) error {
 			totalBetChips := int64(0)
@@ -285,6 +286,7 @@ func handlerCreateGame(c *config.ServerConfig, w http.ResponseWriter, r *http.Re
 		TotalRounds:   bodyJSON.TotalRounds,
 		CurrRound:     1,
 		CurrLocation:  0,
+		CurrTimeStamp: 0,
 		CurrBetChips:  0,
 		CurrBankerId:  user.ID,
 		TotalBetChips: 0,

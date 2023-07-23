@@ -2,14 +2,18 @@ package utils
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/mr-tron/base58"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Transaction struct {
@@ -53,24 +57,49 @@ type Fee struct {
 	Inclusion       string     `json:"inclusion"`
 }
 
+const (
+	MissTransaction      = "Something went wrong: Missing transaction for ID"
+	MissTransactionError = "miss transaction"
+	TransactionBaseUrl   = "https://vm.aleo.org/api/testnet3/transaction/"
+	AppName              = "game_3_card_poker"
+	SavePokerName        = "save_poker"
+	SaveRoundName        = "save_round"
+	SaveUserBalanceName  = "save_user_balance"
+)
+
 // ExecuteMethod 执行链上对应方法，返回新Record保存到数据库
 func ExecuteMethod(privateKey string, viewKey string, appName string, params []string, transition string, record string) (string, error) {
 	output, err := SnarkOsExecute(privateKey, appName, params, transition, record)
+	fmt.Println("执行输出: ", output)
 	if err != nil {
 		log.Println("SnarkOsExecute error:", err)
 		return "", err
 	}
 	transactionId, err := ParseExecuteOutput(output)
+	if len(transactionId) == 0 {
+		log.Println("ParseExecuteOutput error: ", output)
+		return "", nil
+	}
+	fmt.Println("transactionID: ", transactionId)
 	if err != nil {
 		log.Println("ParseExecuteOutput error:", err)
 		return "", err
 	}
 	ciphertext, err := GetCiphertext(transactionId)
+	for {
+		if err == nil || err.Error() != MissTransactionError {
+			break
+		}
+		time.Sleep(time.Millisecond * 500)
+		ciphertext, err = GetCiphertext(transactionId)
+	}
+	fmt.Println("ciphertext: ", ciphertext)
 	if err != nil {
 		log.Println("GetCiphertext error:", err)
 		return "", err
 	}
 	newRecord, err := DecryptRecord(viewKey, ciphertext)
+	fmt.Println("record: ", newRecord)
 	if err != nil {
 		log.Println("DecryptRecord error:", err)
 		return "", err
@@ -84,7 +113,7 @@ func SnarkOsExecute(privateKey string, appName string, params []string, transiti
 	for _, s := range params {
 		param = fmt.Sprintf("%s %s", param, fmt.Sprintf(`"%s"`, s))
 	}
-	cmd := fmt.Sprintf(`snarkos developer execute "%s.aleo" "%s" %s --private-key "%s" --query "https://vm.aleo.org/api" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 100000 --record "%s"`, appName, transition, param, privateKey, record)
+	cmd := fmt.Sprintf(`snarkos developer execute "%s.aleo" "%s" %s --private-key "%s" --query "https://vm.aleo.org/api" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 1000 --record "%s"`, appName, transition, param, privateKey, record)
 	fmt.Println(cmd)
 	result, err := Command(cmd)
 	return result, err
@@ -103,7 +132,8 @@ func ParseExecuteOutput(output string) (string, error) {
 
 // GetCiphertext 根据交易ID获取Ciphertext
 func GetCiphertext(transactionId string) (string, error) {
-	url := "https://vm.aleo.org/api/testnet3/transaction/" + transactionId
+	url := TransactionBaseUrl + transactionId
+	fmt.Println("url:", url)
 	client := http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -124,6 +154,9 @@ func GetCiphertext(transactionId string) (string, error) {
 	if err != nil {
 		fmt.Println("Failed to read HTTP response:", err)
 		return "", err
+	}
+	if strings.HasPrefix(string(body), MissTransaction) {
+		return "", errors.New(MissTransactionError)
 	}
 	var transaction Transaction
 	err = json.Unmarshal(body, &transaction)
@@ -181,4 +214,14 @@ func Command(arg ...string) (string, error) {
 
 	result := string(bytes)
 	return result, nil
+}
+
+// Base58Encode Base58加密并解密为整数
+func Base58Encode(input string) string {
+	decodedBytes, _ := base58.Decode(input)
+	decodedInt := 0
+	for _, b := range decodedBytes {
+		decodedInt = decodedInt*256 + int(b)
+	}
+	return strconv.Itoa(decodedInt)
 }

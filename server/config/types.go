@@ -3,6 +3,7 @@ package config
 // Configuration object extracted from YAML configuration file.
 type Configuration struct {
 	Server Server              `mapstructure:"server"`
+	User   User                `mapstructure:"user"`
 	Smtp   SMTPConfiguration   `mapstructure:"smtp"`
 	Redis  *RedisConfiguration `mapstructure:"redis"`
 	Argon2 Argon2Password      `mapstructure:"argon2"`
@@ -10,6 +11,16 @@ type Configuration struct {
 
 type Server struct {
 	Port int `mapstructure:"port"`
+}
+
+type User struct {
+	DefaultHeadPic      []string `mapstructure:"defaultHeadPic"`
+	ReceiveLimit        int64    `mapstructure:"receiveLimit"`
+	ReceiveCount        int      `mapstructure:"receiveCount"`
+	SignatureMessage    string   `mapstructure:"signatureMessage"`
+	ReceiveAmount       int64    `mapstructure:"receiveAmount"`
+	SignatureVerifyHost string   `mapstructure:"signatureVerifyHost"`
+	DefaultBalance      int64    `mapstructure:"defaultBalance"`
 }
 
 // Argon2Password represents the argon2 hashing settings.

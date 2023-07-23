@@ -12,17 +12,12 @@ func TestUserDB_CreateUser(t *testing.T) {
 	userDB := NewUserDB(db)
 
 	user := User{
-		ID:         11,
-		Email:      "317911613@qq.com",
-		Password:   "1234567",
-		Nickname:   "snail",
-		HeadPic:    "wwwwww",
-		Balance:    1001,
-		ViewKey:    "ViewKey",
-		PrivateKey: "PrivateKey",
-		Address:    "Address",
-		CreateTime: time.Time{},
-		UpdateTime: time.Time{},
+		ID:       11,
+		HeadPic:  "wwwwww",
+		Balance:  1001,
+		Address:  "Address",
+		CreateAt: time.Time{},
+		UpdateAt: time.Time{},
 	}
 	createUser, err := userDB.CreateUser(user)
 	if err != nil {
@@ -34,7 +29,7 @@ func TestUserDB_CreateUser(t *testing.T) {
 func TestUserDB_QueryUser(t *testing.T) {
 	db := NewGameDB()
 	userDB := NewUserDB(db)
-	user, err := userDB.QueryByEmail("317911613@qq.com")
+	user, err := userDB.GetByAddress("317911613@qq.com")
 	if err != nil {
 		fmt.Println(err)
 	}

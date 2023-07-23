@@ -7,18 +7,12 @@ import (
 )
 
 type User struct {
-	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement;not null"`
-	Email      string    `json:"email" gorm:"not null"`
-	Password   string    `json:"-" gorm:"not null"`
-	Nickname   string    `json:"nickname" gorm:"not null"`
-	HeadPic    string    `json:"headPic"`
-	Balance    int64     `json:"balance"`
-	ViewKey    string    `json:"-"`
-	PrivateKey string    `json:"-"`
-	Address    string    `json:"-"`
-	Record     string    `json:"-"`
-	CreateAt   time.Time `json:"-" gorm:"autoCreateTime:milli; not null; default:(datetime('now', 'localtime'))"`
-	UpdateAt   time.Time `json:"-" gorm:"not null; default:(datetime('now', 'localtime'))"`
+	ID       int64     `json:"id" gorm:"primaryKey;autoIncrement;not null"`
+	Address  string    `json:"address"`
+	HeadPic  string    `json:"headPic"`
+	Balance  int64     `json:"balance"`
+	CreateAt time.Time `json:"-" gorm:"autoCreateTime:milli; not null; default:(datetime('now', 'localtime'))"`
+	UpdateAt time.Time `json:"-" gorm:"not null; default:(datetime('now', 'localtime'))"`
 }
 
 func (u *User) UserToJsonStr() string {
@@ -49,18 +43,6 @@ func (u *UserDB) QueryById(id int64) (User, error) {
 	return user, result.Error
 }
 
-func (u *UserDB) QueryByEmail(email string) (User, error) {
-	var user User
-	result := u.db.Find(&user, "email = ?", email)
-	return user, result.Error
-}
-
-func (u *UserDB) QueryByNickname(nickname string) (User, error) {
-	var user User
-	result := u.db.Find(&user, "nickname = ?", nickname)
-	return user, result.Error
-}
-
 func (u *UserDB) Update(user User) (User, error) {
 	tx := u.db.Model(&user).Updates(&user)
 	return user, tx.Error
@@ -72,8 +54,22 @@ func (u *UserDB) GetListByUserIds(userIds []int64) ([]*User, error) {
 	return users, tx.Error
 }
 
-func (u *UserDB) BettingTransaction(next func(tx *gorm.DB) error) error {
+func (u *UserDB) Transaction(next func(tx *gorm.DB) error) error {
 	return u.db.Transaction(func(tx *gorm.DB) error {
 		return next(tx)
 	})
+}
+
+func (u *UserDB) GetByAddress(address string) (User, error) {
+	var user User
+	tx := u.db.Where("address = ?", address).Find(&user)
+	return user, tx.Error
+}
+
+func (u *UserDB) UpdateHeadPic(user User) error {
+	tx := u.db.Model(User{}).Where("address = ?", user.Address).Update("head_pic", user.HeadPic)
+	if tx.Error != nil {
+		return tx.Error
+	}
+	return nil
 }

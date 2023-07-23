@@ -3,13 +3,13 @@ package response
 import (
 	"encoding/json"
 	"game-3-card-poker/server/constant"
-	"game-3-card-poker/server/model"
+	"game-3-card-poker/server/service"
 	"io"
 	"net/http"
 )
 
 func Response(code int, data any, message string, w http.ResponseWriter) {
-	response := model.Response{
+	response := service.Response{
 		Code:    code,
 		Data:    data,
 		Message: message,

@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const CountdownSecond = 60
+
 type DelayMsg struct {
 	GameId    string `json:"gameId"`    // 游戏ID
 	DelayType int    `json:"delayType"` // 延迟类型
@@ -28,7 +30,7 @@ func (d *DelayMsg) ToDelayMsg(jsonStr string) error {
 type JoinUser struct {
 	UserId          int64  `json:"userId"`          // 用户ID
 	State           int    `json:"state"`           // 用户状态
-	Nickname        string `json:"nickname"`        // 用户昵称
+	Address         string `json:"address"`         // 钱包地址
 	HeadPic         string `json:"headPic"`         // 用户头像
 	IsBanker        bool   `json:"isBanker"`        // 是否庄家
 	IsLookCard      bool   `json:"isLookCard"`      // 是否看牌
@@ -46,6 +48,7 @@ type GameRoom struct {
 	TotalRounds       int               `json:"totalRounds"`       // 总游戏局数
 	CurrRound         int               `json:"currRound"`         // 当前第几局
 	CurrLocation      int               `json:"currLocation"`      // 当前操作用户
+	CurrTimeStamp     int64             `json:"currTimeStamp"`     // 当前操作开始时间戳
 	CurrBetChips      int64             `json:"currBetChips"`      // 当前下注筹码
 	CurrBankerId      int64             `json:"currBankerId"`      // 当前庄家ID
 	TotalBetChips     int64             `json:"totalBetChips"`     // 总下注筹码
@@ -59,8 +62,6 @@ type GameRoom struct {
 	CreateUser        int64             `json:"createUser"`        // 创建用户
 	CreateAt          time.Time         `json:"createAt"`          // 创建时间
 }
-
-type Record string
 
 type Message struct {
 	MsgType int    `json:"msgType"` // 消息类型
@@ -87,7 +88,8 @@ func (d *ErrorMessage) ToJsonStr(msgType int) []byte {
 
 type CardMessage struct {
 	Message
-	Card string `json:"card"` // 用户底牌内容
+	Card     string `json:"card"`               // 用户底牌内容
+	BetChips int64  `json:"betChips,omitempty"` // 下注筹码
 }
 
 func (d *CardMessage) ToJsonStr(msgType int) []byte {
@@ -119,12 +121,17 @@ func (a *AutoBetMessage) ToJsonStr(msgType int) []byte {
 }
 
 type EventMsg struct {
-	Type            int   `json:"type"`                      //事件类型
-	UserId          int64 `json:"userId,omitempty"`          //事件用户
-	CompareId       int64 `json:"compareId,omitempty"`       //PK目标用户
-	BetChips        int64 `json:"betChips,omitempty"`        //下注筹码
-	Location        int   `json:"location,omitempty"`        // 当前操作用户
-	CountdownSecond int64 `json:"countdownSecond,omitempty"` //倒计时秒
+	Type            int             `json:"type"`                      // 事件类型
+	UserId          int64           `json:"userId,omitempty"`          // 事件用户
+	WinUserId       int64           `json:"WinUserId,omitempty"`       // PK赢家用户ID
+	CompareId       int64           `json:"compareId,omitempty"`       // PK目标用户
+	BetChips        int64           `json:"betChips,omitempty"`        // 下注筹码
+	Location        int             `json:"location,omitempty"`        // 当前操作用户
+	TotalSecond     int64           `json:"totalSecond,omitempty"`     // 总计->倒计时秒
+	CountdownSecond int64           `json:"countdownSecond,omitempty"` // 剩余->倒计时秒
+	MyselfCard      string          `json:"myselfCard,omitempty"`      // 用户底牌内容
+	IsGameOver      bool            `json:"isGameOver,omitempty"`      // 是否游戏结束
+	Records         []HistoryRecord `json:"records,omitempty"`         // 获取记录
 }
 
 type BroadcastMsg struct {
@@ -134,4 +141,10 @@ type BroadcastMsg struct {
 	Event     *EventMsg   `json:"event,omitempty"` // 游戏操作事件类型
 	BetChips  []int64     `json:"betChips"`        // 下注筹码记录
 	Timestamp int64       `json:"timestamp"`       //时间戳
+}
+
+type Response struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data"`
 }

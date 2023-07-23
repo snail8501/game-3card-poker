@@ -8,6 +8,7 @@ import (
 type UserHistory struct {
 	ID            int64     `json:"id" gorm:"primaryKey;autoIncrement;not null"`
 	UserId        int64     `json:"userId"`
+	Address       string    `json:"address"`
 	GameId        string    `json:"gameId"`
 	RoundID       int       `json:"roundID"`
 	State         int       `json:"state"`

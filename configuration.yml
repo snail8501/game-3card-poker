@@ -2,6 +2,28 @@
 server:
   port: 8080
 
+user:
+  defaultHeadPic:
+    - https://ipfs.io/ipfs/QmSko3JDqBvQNgUh3YnRikB79Cw7NgFLqATHYZoQZUKUCL
+    - https://ipfs.io/ipfs/QmRJhPZ1dJd5dy4BAuLNo8nYvPvG4cBKuWm12Y9HRSBrTE
+    - https://ipfs.io/ipfs/QmXQd9uarseWnTvko7FuztVsSRHz9ov7eXoHUgo2mn2Agf
+    - https://ipfs.io/ipfs/QmYF48CY78X8a2vmzGzyLdwaMFzh9YeoDmdCjVfT1TkmBv
+    - https://ipfs.io/ipfs/QmfYStpDAgnt3fgbfFfDFmkqfM6Cknthw8bDRuHJPcBm1c
+    - https://ipfs.io/ipfs/QmTQPThAsN1MzLMGVYXT4MHepskT9enDgRnWaFnJRdVuix
+    - https://ipfs.io/ipfs/Qme7C9w2Q5hpDdqZAxKxz1WjLjErkTAxujtsveBgA3xB21
+    - https://ipfs.io/ipfs/QmSfcwqfCuR3AHSrqH2bRqK7gtWs99YZ5AZ3E3TFSY5mey
+    - https://ipfs.io/ipfs/QmapmPHPDqPqvF1mNZW3SZ24dPYLEuFyjdLeYvy9YCt5iM
+    - https://ipfs.io/ipfs/QmVWME4Betbi8HXKxMzdiyuwQCvw4QQzKaiFAK4wU9GXRM
+  receiveLimit: 1000
+  receiveCount: 3
+  signatureMessage: test
+  receiveAmount: 1000
+  signatureVerifyHost: https://aleo123.io/api/v3/aleo/programs/signature/verify
+  defaultBalance: 3000
+
+
+
+
 argon2:
   iterations: 2
   key_length: 32

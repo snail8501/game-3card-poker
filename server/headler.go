@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"game-3-card-poker/server/config"
 	"game-3-card-poker/server/constant"
-	"game-3-card-poker/server/model"
 	"game-3-card-poker/server/response"
+	"game-3-card-poker/server/service"
 	"game-3-card-poker/server/utils"
 	"github.com/asaskevich/govalidator"
 	"github.com/gorilla/websocket"
@@ -69,13 +69,8 @@ func RequireAuth(next RequestHandler) RequestHandler {
 			return
 		}
 
-		user, err := c.UserService.GetByEmail(claims.Email)
+		user, err := c.UserService.GetByAddress(claims.Address)
 		if err != nil {
-			response.Fail(constant.Code10012, constant.UserNotLogin, w)
-			return
-		}
-
-		if !claims.LastModifyTime.Equal(user.UpdateAt) {
 			response.Fail(constant.Code10012, constant.UserNotLogin, w)
 			return
 		}
@@ -90,7 +85,7 @@ func RequireAuth(next RequestHandler) RequestHandler {
 
 // RequireWebSocketAuth 拦截器验证用户是否登录
 func RequireWebSocketAuth(next RequestHandler) RequestHandler {
-	errorCallbackFunc := func(c *config.ServerConfig, w http.ResponseWriter, r *http.Request, response model.Response) {
+	errorCallbackFunc := func(c *config.ServerConfig, w http.ResponseWriter, r *http.Request, response service.Response) {
 		conn, err := c.WebSocket.Upgrade(w, r, nil)
 		if err != nil {
 			log.Print("upgrade:", err)
@@ -123,24 +118,16 @@ func RequireWebSocketAuth(next RequestHandler) RequestHandler {
 		// 校验jwt是否有效
 		claims, err := utils.ParseJWT(strToken)
 		if err != nil {
-			errorCallbackFunc(c, w, r, model.Response{
+			errorCallbackFunc(c, w, r, service.Response{
 				Code:    constant.Code10012,
 				Message: constant.UserNotLogin,
 			})
 			return
 		}
 
-		user, err := c.UserService.GetByEmail(claims.Email)
+		user, err := c.UserService.GetByAddress(claims.Address)
 		if err != nil {
-			errorCallbackFunc(c, w, r, model.Response{
-				Code:    constant.Code10012,
-				Message: constant.UserNotLogin,
-			})
-			return
-		}
-
-		if !claims.LastModifyTime.Equal(user.UpdateAt) {
-			errorCallbackFunc(c, w, r, model.Response{
+			errorCallbackFunc(c, w, r, service.Response{
 				Code:    constant.Code10012,
 				Message: constant.UserNotLogin,
 			})
@@ -153,7 +140,7 @@ func RequireWebSocketAuth(next RequestHandler) RequestHandler {
 
 		// 检查游戏GameId连接是否有效
 		if errs := c.Game.CheckGameAvailability(strGameId); errs != nil {
-			errorCallbackFunc(c, w, r, model.Response{
+			errorCallbackFunc(c, w, r, service.Response{
 				Code:    constant.Code20001,
 				Message: constant.GameNotExist,
 			})
@@ -176,11 +163,13 @@ func NewServeMux(mux *http.ServeMux, c *config.ServerConfig) {
 	mux.HandleFunc("/ws", middlewareSocketAuth(handlerSocketConnection))
 	mux.HandleFunc("/api/game/create", middlewareAuth(handlerCreateGame))
 
-	mux.HandleFunc("/api/user/login", middlewareAPI(handlerUserLogin))
-	mux.HandleFunc("/api/user/logout", middlewareAuth(handlerUserLogout))
-	mux.HandleFunc("/api/user/sendVerifyCode", middlewareAPI(handlerSendVerifyCode))
-	mux.HandleFunc("/api/user/register", middlewareAPI(handlerUserRegister))
-	mux.HandleFunc("/api/user/changePassword", middlewareAuth(handlerChangePassword))
+	mux.HandleFunc("/api/user/getSign", middlewareAPI(handlerGetSign))
+	mux.HandleFunc("/api/user/verifySign", middlewareAPI(handlerVerifySign))
+	mux.HandleFunc("/api/user/getUserInfo", middlewareAuth(handlerGetUser))
+	mux.HandleFunc("/api/user/updateHeadPic", middlewareAuth(handlerUpdateHeadPic))
+	mux.HandleFunc("/api/user/receiveCoin", middlewareAuth(handlerReceiveCoin))
+	mux.HandleFunc("/api/user/headList", middlewareAuth(handlerHeadList))
+	mux.HandleFunc("/api/user/historyList", middlewareAuth(handlerHistoryList))
 }
 
 // ParseBody parse the request body into the type of value.

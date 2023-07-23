@@ -30,8 +30,7 @@
     <span class="label">消息：</span><br/>
     <p class="message" id="message">NULL</p>
 </div>
-<!--input id="webSocketUrl" type="text" value="162.219.87.221:8080" style="width: 250px;"-->
-<input id="webSocketUrl" type="text" value="localhost:8080" style="width: 250px;">
+<input id="webSocketUrl" type="text" value="162.219.87.221:8080" style="width: 250px;">
 <input id="webSocketGameId" type="text" style="width: 300px;" placeholder="输入游戏ID"/>
 <button id="userConnect"/>3-->> Connect</button>
 <button id="userDisConnect">Disconnect</button>
@@ -96,7 +95,7 @@ PK:->&nbsp;&nbsp;
         xhr.send(JSON.stringify({
             minimum: parseInt(document.getElementById('minimum').value),
             lowBetChips: 6,
-            topBetChips: 60,
+            topBetChips: 1500,
             totalRounds: 10,
         }));
     });

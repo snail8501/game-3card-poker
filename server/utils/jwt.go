@@ -2,7 +2,6 @@ package utils
 
 import (
 	"errors"
-	"game-3-card-poker/server/db"
 	"github.com/golang-jwt/jwt/v5"
 	"log"
 	"time"
@@ -10,18 +9,16 @@ import (
 
 type Claims struct {
 	jwt.RegisteredClaims
-	Email          string    `json:"email"`
-	LastModifyTime time.Time `json:"lastModifyTime"`
+	Address string `json:"address"`
 }
 
 const SECRET = "testKey"
 
 // CreateJWT 生成JWT
-func CreateJWT(user db.User) (string, error) {
+func CreateJWT(address string) (string, error) {
 	key := []byte(SECRET)
 	claims := Claims{
-		Email:          user.Email,
-		LastModifyTime: user.UpdateAt,
+		Address: address,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "3-card-game",                                      // 签发人
 			IssuedAt:  jwt.NewNumericDate(time.Now()),                     // 签发时间

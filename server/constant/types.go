@@ -36,13 +36,14 @@ const (
 	EVENT_READY_USER                   // 1、准备游戏->用户状态
 	EVENT_PLAYING_USER                 // 2、游戏中->用户状态
 	EVENT_GIVE_UP_USER                 // 3、弃牌->用户状态
-	EVENT_COMPARE_LOSE_USER            // 4、PK输家->用户状态
-	EVENT_WIN_USER                     // 5、最终赢家->用户状态
+	EVENT_COMPARE_LOSE_USER            // 4、PK结果消息(PK输家->用户状态)
+	EVENT_WIN_USER                     // 5、游戏结束消息(最终赢家->用户状态)
 	EVENT_LOOK_CARD                    // 6、看牌
 	EVENT_BET_CHIPS                    // 7、跟注/加注
 	EVENT_AUTO_BETTING                 // 8、用户设置自动下注
 	EVENT_CURRENT_USER                 // 9、当前活动用户
 	EVENT_ERROR                        // 10、错误请求
+	EVENT_OVER                         // 11、游戏结束
 )
 
 // 筹码历史记录状态
@@ -50,6 +51,26 @@ const (
 	BET_STATE_ANTE  = iota + 0 // 1、底注
 	BET_STATE_RAISE            // 2、下注
 	BET_STATE_WIN              // 3、获胜
+)
+
+// 合约相关常量
+const (
+	MissTransaction      = "Something went wrong: Missing transaction for ID"
+	MissTransactionError = "miss transaction"
+	TransactionBaseUrl   = "https://vm.aleo.org/api/testnet3/transaction/"
+	AppName              = "game_3_card_poker"
+	SavePokerName        = "save_poker"
+	SaveRoundName        = "save_round"
+	AddUserBalanceName   = "add_user_balance"
+	SubUserBalanceName   = "sub_user_balance"
+	AdminAddress         = "aleo1l44dfmwcu7j2e26yhrlhrxla4lsrmr0rxymxfzxj6h8m2mnegyqs8x0end"
+	BlockHeight          = "block-height"
+	GetHeightUrl         = "https://vm.aleo.org/api/testnet3/latest/height"
+	GetBlockByHeightUrl  = "https://vm.aleo.org/api/testnet3/block/"
+	InvalidViewKey       = "Invalid view key for the provided record ciphertext"
+	Owner                = "owner"
+	Microcredits         = "microcredits"
+	Nonce                = "_nonce"
 )
 
 // 响应码
@@ -67,6 +88,7 @@ const (
 	Code10010 = 10010 // 用户不存在
 	Code10011 = 10011 // 验证码发送异常
 	Code10012 = 10012 // 用户未登录
+	Code10013 = 10013 // 金币大于1000不允许领取
 	Code20001 = 20001 // 游戏链接不存在
 	Code99999 = 99999 // 系统异常
 )
@@ -86,6 +108,7 @@ const (
 	UserNotExist        = "用户不存在"
 	VerifyCodeSendError = "验证码发送异常"
 	UserNotLogin        = "用户未登录"
+	BalanceThan1000     = "金币大于1000不允许领取"
 	GameNotExist        = "游戏链接不存在"
 	Error               = "系统异常"
 )

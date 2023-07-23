@@ -2,8 +2,10 @@ package utils
 
 import (
 	"fmt"
+	"game-3-card-poker/server/service"
 	"log"
 	"testing"
+	"time"
 )
 
 const privateKey = "APrivateKey1zkp7dKkghREXKtrsEHfVedfSXWskF6FHdKzw3yJPNdFZpyV"
@@ -12,6 +14,48 @@ const address = "aleo1l44dfmwcu7j2e26yhrlhrxla4lsrmr0rxymxfzxj6h8m2mnegyqs8x0end
 const appName = "hello_9ttzuvzqr59dny"
 
 var record = "{\n  owner: aleo1l44dfmwcu7j2e26yhrlhrxla4lsrmr0rxymxfzxj6h8m2mnegyqs8x0end.private,\n  microcredits: 17031515u64.private,\n  _nonce: 8052187601127286545381485952462234167421324300595587637729215050049661619147group.public\n}"
+
+func TestSaveUserPoker(t *testing.T) {
+	poker1 := service.UserPoker{
+		OnePoker: service.Poker{
+			Value: 1,
+			Color: 1,
+		},
+		TowPoker: service.Poker{
+			Value: 2,
+			Color: 2,
+		},
+		ThreePoker: service.Poker{
+			Value: 3,
+			Color: 3,
+		},
+	}
+
+	poker2 := service.UserPoker{
+		OnePoker: service.Poker{
+			Value: 11,
+			Color: 1,
+		},
+		TowPoker: service.Poker{
+			Value: 12,
+			Color: 2,
+		},
+		ThreePoker: service.Poker{
+			Value: 13,
+			Color: 4,
+		},
+	}
+
+	m := make(map[int64]service.UserPoker)
+	m[1001] = poker1
+	m[1001] = poker2
+	time.Sleep(time.Minute * 5)
+}
+
+func TestBase58Encode(t *testing.T) {
+	encode := Base58Encode("qwer")
+	fmt.Println(encode)
+}
 
 func TestSnarkOsExecute(t *testing.T) {
 	res, err := SnarkOsExecute(privateKey, appName, []string{"1u32", "2u32", "3u32"}, "main", record)

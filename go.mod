@@ -8,8 +8,9 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.0.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible
+	github.com/jinzhu/copier v0.3.5
 	github.com/mattn/go-sqlite3 v1.14.16
+	github.com/mr-tron/base58 v1.2.0
 	github.com/redis/go-redis/v9 v9.0.4
 	github.com/rs/cors v1.9.0
 	github.com/spf13/viper v1.16.0
