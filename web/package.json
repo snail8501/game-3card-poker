@@ -1,0 +1,30 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@headlessui/react": "latest",
+    "@heroicons/react": "latest",
+    "@tailwindcss/aspect-ratio": "latest",
+    "@tailwindcss/container-queries": "latest",
+    "@tailwindcss/forms": "latest",
+    "@tailwindcss/line-clamp": "latest",
+    "@tailwindcss/typography": "latest",
+    "@react-spring/web": "latest",
+    "autoprefixer": "latest",
+    "classnames": "latest",
+    "next": "latest",
+    "postcss": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "swr": "latest",
+    "tailwindcss": "latest",
+    "use-local-storage-state": "latest",
+    "bs58": "latest",
+    "react-copy-to-clipboard": "latest"
+  }
+}

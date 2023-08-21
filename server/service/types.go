@@ -7,7 +7,10 @@ import (
 	"time"
 )
 
-const CountdownSecond = 60
+const (
+	CountdownSecond = 60
+	AnimationSecond = 6
+)
 
 type DelayMsg struct {
 	GameId    string `json:"gameId"`    // 游戏ID
@@ -129,8 +132,10 @@ type EventMsg struct {
 	Location        int             `json:"location,omitempty"`        // 当前操作用户
 	TotalSecond     int64           `json:"totalSecond,omitempty"`     // 总计->倒计时秒
 	CountdownSecond int64           `json:"countdownSecond,omitempty"` // 剩余->倒计时秒
+	AnimationSecond int64           `json:"animationSecond,omitempty"` // 动画(pk效果,最终赢家效果)->倒计时秒
 	MyselfCard      string          `json:"myselfCard,omitempty"`      // 用户底牌内容
 	IsGameOver      bool            `json:"isGameOver,omitempty"`      // 是否游戏结束
+	ListBetChips    []int64         `json:"listBetChips,omitempty"`    // 加注筹码列表值
 	Records         []HistoryRecord `json:"records,omitempty"`         // 获取记录
 }
 

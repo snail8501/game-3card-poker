@@ -176,11 +176,13 @@ func (c Game) BroadcastWinMsg(ctx context.Context, gameRoom *GameRoom, eventMsg 
 				cardList[userId] = userPoker.ToString()
 			}
 
-			for index := range records {
-				otherUserId := records[index]
-				otherPoker, _ := c.GetUserPokerCache(context.Background(), gameRoom, otherUserId)
-				if otherPoker != nil {
-					cardList[otherUserId] = otherPoker.ToString()
+			if records != nil && len(records) > 0 {
+				for index := range records {
+					otherUserId := records[index]
+					otherPoker, _ := c.GetUserPokerCache(context.Background(), gameRoom, otherUserId)
+					if otherPoker != nil {
+						cardList[otherUserId] = otherPoker.ToString()
+					}
 				}
 			}
 
@@ -203,6 +205,22 @@ func (c Game) BroadcastMsg(ctx context.Context, gameRoom *GameRoom, eventMsg *Ev
 	// 广播消息
 	msgJsonByte, _ := c.GetBroadcastMsg(ctx, gameRoom, eventMsg)
 	for userId := range c.Clients {
+		joinUser := c.GetJoinUser(ctx, userId, gameRoom.CurrRound)
+		if joinUser == nil {
+			continue
+		}
+
+		// 游戏等待中(没ready状态不主动推送消息)
+		if gameRoom.State == constant.GAME_WAIT && gameRoom.CurrRound > 1 {
+			if joinUser.State == constant.EVENT_JOIN_USER {
+				// 上局加入过游戏
+				lastJoinUser := c.GetJoinUser(ctx, userId, gameRoom.CurrRound-1)
+				if lastJoinUser != nil && lastJoinUser.State > constant.EVENT_JOIN_USER {
+					continue
+				}
+			}
+		}
+
 		clients := c.Clients[userId]
 		for token := range clients {
 			clients[token].WriteMessage(websocket.TextMessage, msgJsonByte)
@@ -270,8 +288,6 @@ func (c Game) GetGamePkCompareRecord(records map[int64][]int64, userIds []int64)
 // CheckGameWinUser 最终赢家用户
 func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUsers []*JoinUser) bool {
 
-	var topRecordUserIdArr []int64
-
 	// 游戏中玩家列表
 	payingUsers := func() []*JoinUser {
 		users := make([]*JoinUser, 0)
@@ -284,11 +300,15 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 		return users
 	}()
 
+	var topRecordUserIdArr []int64
+
 	getWinUserFunc := func() (bool, *JoinUser) {
 
 		// 仅剩一个游戏玩家判定为赢家
 		if len(payingUsers) == 1 {
-			return true, payingUsers[0]
+			winJoinUser := payingUsers[0]
+			gameRoom.Records[winJoinUser.UserId] = nil
+			return true, winJoinUser
 		}
 
 		// 封顶全部开牌
@@ -349,7 +369,6 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 		// 游戏过程中PK记录(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
 		if topRecordUserIdArr != nil && len(topRecordUserIdArr) > 0 {
 			gameRoom.Records = c.GetGamePkCompareRecord(gameRoom.Records, topRecordUserIdArr)
-
 			for index := range payingUsers {
 				payUser := payingUsers[index]
 				if payUser.UserId != winJoinUser.UserId {
@@ -384,10 +403,11 @@ func (c Game) CheckGameWinUser(ctx context.Context, gameRoom *GameRoom, joinUser
 
 	// 发送获胜者的广播消息->(每局结束时，所有玩家只能看见自己比过或跟自己比过的玩家的手牌)
 	c.BroadcastWinMsg(ctx, gameRoom, &EventMsg{
-		Type:       constant.EVENT_OVER,
-		UserId:     winJoinUser.UserId,
-		IsGameOver: isGameOver,
-		Records:    records,
+		Type:            constant.EVENT_OVER,
+		UserId:          winJoinUser.UserId,
+		AnimationSecond: AnimationSecond,
+		IsGameOver:      isGameOver,
+		Records:         records,
 	})
 
 	// 下一局开始,获胜者成为新庄家
@@ -563,9 +583,31 @@ func (c Game) SetNextOperateUser(ctx context.Context, gameRoom *GameRoom, operat
 			TotalSecond:     CountdownSecond,
 			CountdownSecond: CountdownSecond,
 			BetChips:        lowBetChips,
+			ListBetChips:    c.GetListBetChips(gameRoom, lowBetChips),
 		}
 		c.BroadcastMsg(ctx, gameRoom, &eventMsg)
 	}()
+}
+
+func (c Game) GetListBetChips(gameRoom *GameRoom, currentBetChips int64) []int64 {
+
+	listBetChips := make([]int64, 0)
+	if gameRoom.LowBetChips < currentBetChips {
+		listBetChips = append(listBetChips, gameRoom.LowBetChips)
+		listBetChips = append(listBetChips, currentBetChips)
+		listBetChips = append(listBetChips, int64(float64(currentBetChips)*1.5))
+		listBetChips = append(listBetChips, currentBetChips*2)
+		listBetChips = append(listBetChips, int64(float64(currentBetChips)*2.5))
+		listBetChips = append(listBetChips, currentBetChips*3)
+	} else {
+		listBetChips = append(listBetChips, gameRoom.LowBetChips)
+		listBetChips = append(listBetChips, gameRoom.LowBetChips+1)
+		listBetChips = append(listBetChips, gameRoom.LowBetChips+2)
+		listBetChips = append(listBetChips, gameRoom.LowBetChips+3)
+		listBetChips = append(listBetChips, gameRoom.LowBetChips+4)
+		listBetChips = append(listBetChips, gameRoom.LowBetChips+5)
+	}
+	return listBetChips
 }
 
 // CreateGames 创建游戏
@@ -829,6 +871,7 @@ func (c Game) UserJoinRoom(loginUser db.User, isReadJoin bool, callFunc func(*Ga
 					eventMsg.UserId = user.UserId
 					eventMsg.Location = user.Location
 					eventMsg.BetChips = lowBetChips
+					eventMsg.ListBetChips = c.GetListBetChips(gameRoom, lowBetChips)
 				}
 
 				// 已看牌或者已弃牌
@@ -1141,6 +1184,7 @@ func (c Game) UserBetting(userId, compareId int64, currRound int, betChips int64
 	if isPkRequest {
 		eventMsg.CompareId = compareId
 		eventMsg.Type = constant.EVENT_COMPARE_LOSE_USER
+		eventMsg.AnimationSecond = AnimationSecond
 		eventMsg.WinUserId = userId
 		if !pkResult {
 			// 设置自己PK失败
@@ -1241,7 +1285,7 @@ func (c Game) setGameRoomCache(ctx context.Context, gameRoom *GameRoom) error {
 	}
 
 	// 更新到缓存
-	c.RedisClient.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 0)
+	c.RedisClient.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 24*time.Hour)
 	return nil
 }
 
@@ -1255,7 +1299,7 @@ func (c Game) setBatchCache(ctx context.Context, gameRoom *GameRoom, joinUsers m
 	if err != nil {
 		return err
 	}
-	pipeline.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 0)
+	pipeline.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 24*time.Hour)
 
 	for userId := range joinUsers {
 		joinUser := joinUsers[userId]
@@ -1263,7 +1307,7 @@ func (c Game) setBatchCache(ctx context.Context, gameRoom *GameRoom, joinUsers m
 		if err != nil {
 			return err
 		}
-		pipeline.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), userJson, 0)
+		pipeline.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), userJson, 24*time.Hour)
 	}
 
 	// Execute all queued commands in a single round trip
@@ -1308,7 +1352,7 @@ func (c Game) setPokerBatchCache(ctx context.Context, gameRoom *GameRoom, joinUs
 	if err != nil {
 		return err
 	}
-	pipeline.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 0)
+	pipeline.Set(ctx, fmt.Sprintf("game-room:%s", gameRoom.GameId), gameJson, 24*time.Hour)
 
 	for userId := range joinUsers {
 		joinUser := joinUsers[userId]
@@ -1316,7 +1360,7 @@ func (c Game) setPokerBatchCache(ctx context.Context, gameRoom *GameRoom, joinUs
 		if errs != nil {
 			return errs
 		}
-		pipeline.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), userJson, 0)
+		pipeline.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), userJson, 24*time.Hour)
 	}
 
 	for userId := range userPokers {
@@ -1324,7 +1368,7 @@ func (c Game) setPokerBatchCache(ctx context.Context, gameRoom *GameRoom, joinUs
 		if errs != nil {
 			return errs
 		}
-		pipeline.Set(ctx, fmt.Sprintf("user-poker:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), pokerJson, 0)
+		pipeline.Set(ctx, fmt.Sprintf("user-poker:%s-%d-%d", gameRoom.GameId, userId, gameRoom.CurrRound), pokerJson, 24*time.Hour)
 	}
 
 	// Execute all queued commands in a single round trip
@@ -1339,6 +1383,6 @@ func (c Game) setPokerBatchCache(ctx context.Context, gameRoom *GameRoom, joinUs
 // setJoinUserCache 单个用户信息更新缓存
 func (c Game) setJoinUserCache(ctx context.Context, gameRoom *GameRoom, joinUser *JoinUser) error {
 	userJson, _ := json.Marshal(joinUser)
-	c.RedisClient.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, joinUser.UserId, gameRoom.CurrRound), userJson, 0)
+	c.RedisClient.Set(ctx, fmt.Sprintf("join-user:%s-%d-%d", gameRoom.GameId, joinUser.UserId, gameRoom.CurrRound), userJson, 24*time.Hour)
 	return nil
 }

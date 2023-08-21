@@ -2,7 +2,7 @@
 # ========================================
 # ===== Build image for the golang =====
 # ========================================
-FROM registry.cn-shanghai.aliyuncs.com/snail-ware/swift-golang:1.19.0-amd64 AS builder
+FROM registry.cn-hongkong.aliyuncs.com/drpool/golang:1.19.0-amd64 AS builder
 
 ENV CGO_ENABLED=1 GOOS=linux GOARCH=amd64
 ENV CGO_CFLAGS="-g -O2 -Wno-return-local-addr"
