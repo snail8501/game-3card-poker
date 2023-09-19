@@ -1,0 +1,21 @@
+// The program input for game_3_card_poker/src/main.leo
+[main]
+public a: u32 = 1u32;
+b: u32 = 2u32;
+
+[save_poker]
+public game_id: field = 1001field;
+public round_id: u64 = 1u64;
+public poker: field = 112233field;
+public map_key: field = 100000000field;
+
+[save_round]
+public game_id: field = 1001field;
+public round_id: u64 = 1u64;
+public total_amount: u64 = 1000u64;
+public winner: field = 9527field;
+public map_key: field = 100000000field;
+
+[save_user_banlance]
+public user_id: u64 = 1001u64;
+public banlance: u64 = 10000000u64
