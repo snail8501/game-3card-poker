@@ -4,16 +4,26 @@ server:
 
 user:
   defaultHeadPic:
-    - https://ipfs.io/ipfs/QmSko3JDqBvQNgUh3YnRikB79Cw7NgFLqATHYZoQZUKUCL
-    - https://ipfs.io/ipfs/QmRJhPZ1dJd5dy4BAuLNo8nYvPvG4cBKuWm12Y9HRSBrTE
-    - https://ipfs.io/ipfs/QmXQd9uarseWnTvko7FuztVsSRHz9ov7eXoHUgo2mn2Agf
-    - https://ipfs.io/ipfs/QmYF48CY78X8a2vmzGzyLdwaMFzh9YeoDmdCjVfT1TkmBv
-    - https://ipfs.io/ipfs/QmfYStpDAgnt3fgbfFfDFmkqfM6Cknthw8bDRuHJPcBm1c
-    - https://ipfs.io/ipfs/QmTQPThAsN1MzLMGVYXT4MHepskT9enDgRnWaFnJRdVuix
-    - https://ipfs.io/ipfs/Qme7C9w2Q5hpDdqZAxKxz1WjLjErkTAxujtsveBgA3xB21
-    - https://ipfs.io/ipfs/QmSfcwqfCuR3AHSrqH2bRqK7gtWs99YZ5AZ3E3TFSY5mey
-    - https://ipfs.io/ipfs/QmapmPHPDqPqvF1mNZW3SZ24dPYLEuFyjdLeYvy9YCt5iM
-    - https://ipfs.io/ipfs/QmVWME4Betbi8HXKxMzdiyuwQCvw4QQzKaiFAK4wU9GXRM
+    - http://game.pool9527.com/avatar/1.png
+    - http://game.pool9527.com/avatar/2.png
+    - http://game.pool9527.com/avatar/3.png
+    - http://game.pool9527.com/avatar/4.png
+    - http://game.pool9527.com/avatar/5.png
+    - http://game.pool9527.com/avatar/6.png
+    - http://game.pool9527.com/avatar/7.png
+    - http://game.pool9527.com/avatar/8.png
+    - http://game.pool9527.com/avatar/9.png
+    - http://game.pool9527.com/avatar/10.png
+    - http://game.pool9527.com/avatar/11.png
+    - http://game.pool9527.com/avatar/12.png
+    - http://game.pool9527.com/avatar/13.png
+    - http://game.pool9527.com/avatar/14.png
+    - http://game.pool9527.com/avatar/15.png
+    - http://game.pool9527.com/avatar/16.png
+    - http://game.pool9527.com/avatar/17.png
+    - http://game.pool9527.com/avatar/18.png
+    - http://game.pool9527.com/avatar/19.png
+    - http://game.pool9527.com/avatar/20.png
   receiveLimit: 1000
   receiveCount: 3
   signatureMessage: test
