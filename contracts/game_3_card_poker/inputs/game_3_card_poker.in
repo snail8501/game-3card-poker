@@ -18,4 +18,4 @@ public map_key: field = 100000000field;
 
 [save_user_banlance]
 public user_id: u64 = 1001u64;
-public banlance: u64 = 10000000u64
+public banlance: u64 = 10000000u64;

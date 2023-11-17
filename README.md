@@ -1,6 +1,7 @@
 # game 3card poker
 
-Game 3card Poker is a poker game. Players can choose to look at their own cards. The cards they have seen are open cards. They need to put their chips into the prize pool in the center of the table. Players who do not choose to "give up" can choose to look at their own cards when it is their turn to act. The cards they have seen are open cards. Players who give up in the game have no right to see their cards and other players' cards before ending the game. At the end of the game, the cards of all players will be disclosed. Compared to the card is an important part of the game, players can choose to compare cards, raise or compare cards, until the final win.
+"3Card Poker" is a DAO Governance Game DApp where all transactions and assets are recorded on an immutable blockchain.
+Players can choose to look at their own cards. The cards they have seen are open cards. They need to put their chips into the prize pool in the center of the table. Players who do not choose to "give up" can choose to look at their own cards when it is their turn to act. The cards they have seen are open cards. Players who give up in the game have no right to see their cards and other players' cards before ending the game. At the end of the game, the cards of all players will be disclosed. Compared to the card is an important part of the game, players can choose to compare cards, raise or compare cards, until the final win.
 
 Basic rules of 1.
 - The rules for Game 3card Poker are relatively simple and require at least two people to participate. The game uses a deck of playing cards with the size of the king removed. It is usually played by three or four people. Each person can get three cards, and the person with the largest face wins.
@@ -41,6 +42,13 @@ Test Network Game Address: http://162.219.87.221
 
 To compile this Aleo program, run:
 ```bash
+
+## contracts publish
+cd contracts/game_3_card_poker
+leo run
+snarkos developer deploy "game_3_card_poker.aleo" --private-key "" --query "https://vm.aleo.org/api" --path "./build/" --broadcast "https://vm.aleo.org/api/testnet3/transaction/broadcast" --fee 1000 --record ""
+
+
 ## ui build
 cd web
 npm install 
