@@ -26,8 +26,6 @@ Special circumstances 3.
 
 Game 3card Poker is a very interesting poker game. Although the rules are relatively simple, the player's wisdom and strategy are still required during the game. I hope this article can help readers better understand the basic rules of fried golden flowers, so that everyone can enjoy the fun of the game while enjoying leisure and entertainment.
 
-Test Network Game Address: http://162.219.87.221
-
 ## 1、Create Game, Share a link Invite a friend to play
 <img alt="zenet" width="1412" src=".resources/image-1.jpg">
 
