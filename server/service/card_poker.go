@@ -11,7 +11,7 @@ import (
 const (
 	PokerTriple        = 6 // 豹子（AAA最大，222最小）
 	PokerFlushStraight = 5 // 同花顺（AKQ最大，A23最小）
-	PokerFlush         = 4 // 同花（AKJ最大，352最小）
+	PokerFlush         = 4 // 同花（AKQ最大，A23最小）
 	PokerStraight      = 3 // 顺子（AKQ最大，A23最小）
 	PokerDouble        = 2 // 对子（AAK最大，223最小）
 	PokerSingle        = 1 // 单张（AKJ最大，352最小）
